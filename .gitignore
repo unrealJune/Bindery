@@ -1,0 +1,15 @@
+bin/
+obj/
+*.user
+.vs/
+.idea/
+NuGet.offline.config
+/library/
+/data/
+*.db
+*.db-shm
+*.db-wal
+.venv/
+__pycache__/
+*.pyc
+/artifacts/
