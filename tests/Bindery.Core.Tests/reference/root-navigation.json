@@ -1,0 +1,50 @@
+{
+  "metadata": {
+    "@type": "http://schema.org/DataFeed",
+    "identifier": "urn:bindery:feed:root",
+    "title": "Bindery",
+    "subtitle": "A small library",
+    "modified": "2026-08-10T12:30:00Z"
+  },
+  "links": [
+    {
+      "rel": "self",
+      "href": "/opds",
+      "type": "application/atom+xml;profile=opds-catalog;kind=navigation"
+    },
+    {
+      "rel": "start",
+      "href": "/opds",
+      "type": "application/atom+xml;profile=opds-catalog;kind=navigation",
+      "title": "Catalog"
+    },
+    {
+      "rel": "search",
+      "href": "/opds/opensearch.xml",
+      "type": "application/opensearchdescription+xml",
+      "title": "Search"
+    }
+  ],
+  "navigation": [
+    {
+      "href": "/opds/new",
+      "title": "Recently added",
+      "type": "application/atom+xml;profile=opds-catalog;kind=acquisition",
+      "rel": "subsection",
+      "properties": {
+        "subtitle": "The most recent arrivals",
+        "numberOfItems": 2
+      }
+    },
+    {
+      "href": "/opds/authors",
+      "title": "Authors",
+      "type": "application/atom+xml;profile=opds-catalog;kind=navigation",
+      "rel": "subsection",
+      "properties": {
+        "subtitle": "Browse by author",
+        "numberOfItems": 1
+      }
+    }
+  ]
+}

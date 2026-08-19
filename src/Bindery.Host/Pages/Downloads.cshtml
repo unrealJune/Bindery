@@ -1,0 +1,29 @@
+@page
+@model DownloadsModel
+@{
+    ViewData["Title"] = "Jobs";
+}
+
+<header class="page-heading">
+    <div>
+        <h1>Production job ledger</h1>
+        <p>Every source handoff remains visible, including retry history and failures that need operator attention.</p>
+    </div>
+    <a class="button button-secondary" asp-page="/Index">New intake</a>
+</header>
+
+<section class="ledger-section">
+    <div class="section-heading compact">
+        <div>
+            <h2>Latest jobs</h2>
+            <p>Live rows refresh while this page is open.</p>
+        </div>
+        <span class="live-key"><i aria-hidden="true"></i> Live register</span>
+    </div>
+    <div id="job-ledger"
+         hx-get="/Downloads?handler=Rows"
+         hx-trigger="every 2s"
+         hx-swap="innerHTML">
+        <partial name="_JobRows" model="Model.Jobs" />
+    </div>
+</section>

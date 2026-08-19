@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Bindery.Core</RootNamespace>
+    <AssemblyName>Bindery.Core</AssemblyName>
+    <Description>Domain types, plugin protocol, and OPDS 1.2/2.0 serialization for Bindery.</Description>
+    <WarningLevel>5</WarningLevel>
+    <OtherFlags>$(OtherFlags) --warnon:1182</OtherFlags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The JSON accessors are internal; the tests exercise them directly. -->
+    <InternalsVisibleTo Include="Bindery.Core.Tests" />
+    <InternalsVisibleTo Include="Bindery.Host" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="Json.fs" />
+    <Compile Include="Domain.fs" />
+    <Compile Include="Protocol.fs" />
+    <Compile Include="Routing.fs" />
+    <Compile Include="Opds.fs" />
+    <Compile Include="OpdsAtom.fs" />
+    <Compile Include="OpdsJson.fs" />
+  </ItemGroup>
+
+</Project>

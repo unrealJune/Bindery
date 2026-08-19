@@ -1,0 +1,69 @@
+@model IReadOnlyList<DownloadJobEntity>
+
+@if (Model.Count == 0)
+{
+    <div class="empty-state empty-state-wide">
+        <strong>No jobs have been recorded.</strong>
+        <span>File a source from Intake to start the ledger.</span>
+    </div>
+}
+else
+{
+    <div class="job-ledger">
+        <div class="job-ledger-head" aria-hidden="true">
+            <span>State</span>
+            <span>Source</span>
+            <span>Progress</span>
+            <span>Recorded</span>
+            <span>Action</span>
+        </div>
+        @foreach (var job in Model)
+        {
+            var state = job.Status.ToString().ToLowerInvariant();
+            <article class="job-ledger-row" data-state="@state">
+                <div class="job-state">
+                    <span class="status-mark status-@state" aria-hidden="true"></span>
+                    <strong>@job.Status</strong>
+                    <small>@(job.PluginName ?? "Unrouted")</small>
+                </div>
+                <div class="job-source">
+                    <strong>@(job.Message ?? job.Url)</strong>
+                    <small title="@job.Url">@job.Url</small>
+                    @if (!string.IsNullOrEmpty(job.ErrorMessage))
+                    {
+                        <span class="job-error">@job.ErrorMessage</span>
+                    }
+                </div>
+                <div class="job-progress">
+                    <span style="--progress: @Math.Clamp(job.Percent, 0, 100)%"></span>
+                    <data value="@job.Percent">@job.Percent.ToString("0")%</data>
+                </div>
+                <time datetime="@job.CreatedAt.ToString("O")">@job.CreatedAt.ToLocalTime().ToString("MMM d, HH:mm")</time>
+                <div class="job-actions">
+                    @if (job.Status is JobStatus.Queued or JobStatus.Running)
+                    {
+                        <form method="post" asp-page="/Downloads" asp-page-handler="Cancel">
+                            <input type="hidden" name="id" value="@job.Id" />
+                            <button class="text-action danger" type="submit">Cancel</button>
+                        </form>
+                    }
+                    else if (job.Status is JobStatus.Failed or JobStatus.Cancelled)
+                    {
+                        <form method="post" asp-page="/Downloads" asp-page-handler="Retry">
+                            <input type="hidden" name="id" value="@job.Id" />
+                            <button class="text-action" type="submit">Retry</button>
+                        </form>
+                    }
+                    else if (job.BookId is not null)
+                    {
+                        <a class="text-action" asp-page="/Book" asp-route-id="@job.BookId">View book</a>
+                    }
+                    else
+                    {
+                        <span>—</span>
+                    }
+                </div>
+            </article>
+        }
+    </div>
+}

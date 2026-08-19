@@ -1,0 +1,111 @@
+@page
+@model IndexModel
+@{
+    ViewData["Title"] = "Intake";
+}
+
+<header class="page-heading">
+    <div>
+        <h1>Bring a source into the library.</h1>
+        <p>Bindery routes the URL to an installed downloader, records the job, and files the result without sharing your library volume.</p>
+    </div>
+    <span class="folio">@Model.TotalBooks.ToString("0000") books filed</span>
+</header>
+
+<div class="intake-grid">
+    <section class="intake-docket" aria-labelledby="intake-title">
+        <div class="docket-heading">
+            <h2 id="intake-title">Source intake</h2>
+            <span>HTTP handoff</span>
+        </div>
+        <form method="post" asp-page-handler="Queue" class="intake-form">
+            <div asp-validation-summary="ModelOnly" class="validation-summary" role="alert"></div>
+            <label asp-for="SourceUrl">Story or book URL</label>
+            <input asp-for="SourceUrl" class="control control-large" placeholder="https://archiveofourown.org/works/…" autocomplete="url" autofocus />
+            <span asp-validation-for="SourceUrl" class="field-error"></span>
+
+            <div class="intake-options">
+                <div>
+                    <label asp-for="PreferredPlugin">Routing</label>
+                    <select asp-for="PreferredPlugin" class="control">
+                        <option value="">Automatic</option>
+                        @foreach (var plugin in Model.Plugins)
+                        {
+                            <option value="@plugin.Name">@plugin.DisplayName</option>
+                        }
+                    </select>
+                </div>
+                <button class="button button-primary" type="submit">
+                    <span>File source</span>
+                    <small>Queue download</small>
+                </button>
+            </div>
+        </form>
+        <p class="docket-note">Credentials stay encrypted in Bindery. Downloaders receive only the settings and job data they need over HTTP.</p>
+    </section>
+
+    <section class="queue-docket" aria-labelledby="queue-title">
+        <div class="docket-heading">
+            <h2 id="queue-title">On the floor</h2>
+            <a asp-page="/Downloads">Full job ledger</a>
+        </div>
+        @if (Model.ActiveJobs.Count == 0)
+        {
+            <div class="empty-state">
+                <strong>The floor is clear.</strong>
+                <span>Queued and running jobs will appear here.</span>
+            </div>
+        }
+        else
+        {
+            <ol class="job-strip">
+                @foreach (var job in Model.ActiveJobs)
+                {
+                    <li>
+                        <span class="status-mark status-@job.Status.ToString().ToLowerInvariant()" aria-hidden="true"></span>
+                        <div>
+                            <strong>@(job.Message ?? job.Status.ToString())</strong>
+                            <small>@job.PluginName · @job.Url</small>
+                        </div>
+                        <data value="@job.Percent">@job.Percent.ToString("0")%</data>
+                    </li>
+                }
+            </ol>
+        }
+    </section>
+</div>
+
+<section class="ledger-section">
+    <div class="section-heading">
+        <div>
+            <h2>Recently filed</h2>
+            <p>The newest books in the on-disk library.</p>
+        </div>
+        <a class="text-action" asp-page="/Library">Open full register</a>
+    </div>
+
+    @if (Model.RecentBooks.Count == 0)
+    {
+        <div class="empty-state empty-state-wide">
+            <strong>No books are filed yet.</strong>
+            <span>Submit a supported source above, or scan an existing Bindery library.</span>
+        </div>
+    }
+    else
+    {
+        <div class="book-register">
+            @foreach (var book in Model.RecentBooks)
+            {
+                <a class="book-row" asp-page="/Book" asp-route-id="@book.Id">
+                    <span class="book-sequence">@book.Added.ToString("MM.dd")</span>
+                    <span class="book-title">
+                        <strong>@book.Title</strong>
+                        <small>@book.AuthorLine</small>
+                    </span>
+                    <span class="book-meta">@(book.Series.HasValue() ? book.Series.Value.Name : book.Files.Head.Format.ToUpperInvariant())</span>
+                    <span class="row-arrow" aria-hidden="true">→</span>
+                </a>
+            }
+        </div>
+    }
+</section>

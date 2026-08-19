@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns:dcterms="http://purl.org/dc/terms/" xmlns:opds="http://opds-spec.org/2010/catalog" xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/" xmlns:thr="http://purl.org/syndication/thread/1.0" xmlns="http://www.w3.org/2005/Atom">
+  <id>urn:bindery:feed:root</id>
+  <title>Bindery</title>
+  <subtitle>A small library</subtitle>
+  <updated>2026-08-10T12:30:00Z</updated>
+  <author>
+    <name>Bindery</name>
+    <uri>https://github.com/OWNER/bindery</uri>
+  </author>
+  <link rel="self" href="/opds" type="application/atom+xml;profile=opds-catalog;kind=navigation" />
+  <link rel="start" href="/opds" type="application/atom+xml;profile=opds-catalog;kind=navigation" title="Catalog" />
+  <link rel="search" href="/opds/opensearch.xml" type="application/opensearchdescription+xml" title="Search" />
+  <entry>
+    <id>urn:bindery:feed:new</id>
+    <title>Recently added</title>
+    <updated>2026-08-10T12:30:00Z</updated>
+    <content type="text">The most recent arrivals</content>
+    <link rel="subsection" href="/opds/new" type="application/atom+xml;profile=opds-catalog;kind=acquisition" thr:count="2" />
+  </entry>
+  <entry>
+    <id>urn:bindery:feed:authors</id>
+    <title>Authors</title>
+    <updated>2026-08-10T12:30:00Z</updated>
+    <content type="text">Browse by author</content>
+    <link rel="subsection" href="/opds/authors" type="application/atom+xml;profile=opds-catalog;kind=navigation" thr:count="1" />
+  </entry>
+</feed>

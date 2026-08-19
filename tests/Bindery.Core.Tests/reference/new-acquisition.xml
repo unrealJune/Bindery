@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns:dcterms="http://purl.org/dc/terms/" xmlns:opds="http://opds-spec.org/2010/catalog" xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/" xmlns:thr="http://purl.org/syndication/thread/1.0" xmlns="http://www.w3.org/2005/Atom">
+  <id>urn:bindery:feed:new</id>
+  <title>Recently added</title>
+  <updated>2026-08-10T12:30:00Z</updated>
+  <opensearch:totalResults>2</opensearch:totalResults>
+  <opensearch:itemsPerPage>20</opensearch:itemsPerPage>
+  <opensearch:startIndex>1</opensearch:startIndex>
+  <link rel="self" href="/opds/new" type="application/atom+xml;profile=opds-catalog;kind=acquisition" />
+  <link rel="start" href="/opds" type="application/atom+xml;profile=opds-catalog;kind=navigation" title="Catalog" />
+  <link rel="search" href="/opds/opensearch.xml" type="application/opensearchdescription+xml" title="Search" />
+  <link rel="up" href="/opds" type="application/atom+xml;profile=opds-catalog;kind=navigation" />
+  <entry>
+    <id>urn:bindery:book:11111111222233334444555555555555</id>
+    <title>The Hobbit, Rewritten</title>
+    <updated>2026-08-10T12:30:00Z</updated>
+    <published>2025-01-02T00:00:00Z</published>
+    <author>
+      <name>Some Author</name>
+    </author>
+    <summary type="text">Middle Rewrites, book 2 · 10 chapters · A story about a journey &amp; a ring.</summary>
+    <category term="Adventure" label="Adventure" />
+    <category term="Slow Burn" label="Slow Burn" />
+    <category term="Middle Rewrites" label="Middle Rewrites" scheme="http://bindery.local/series" />
+    <dcterms:language>en</dcterms:language>
+    <dcterms:publisher>fanficfare</dcterms:publisher>
+    <dcterms:identifier>urn:bindery:book:11111111222233334444555555555555</dcterms:identifier>
+    <dcterms:issued>2025-01-02</dcterms:issued>
+    <dcterms:isPartOf>Middle Rewrites</dcterms:isPartOf>
+    <link rel="http://opds-spec.org/acquisition/open-access" href="/opds/download/11111111222233334444555555555555.epub" type="application/epub+zip" title="EPUB" length="481920" />
+    <link rel="http://opds-spec.org/acquisition/open-access" href="/opds/download/11111111222233334444555555555555.txt" type="text/plain; charset=utf-8" title="TXT" length="90210" />
+    <link rel="http://opds-spec.org/image" href="/opds/cover/11111111222233334444555555555555" type="image/jpeg" />
+    <link rel="http://opds-spec.org/image/thumbnail" href="/opds/thumb/11111111222233334444555555555555" type="image/jpeg" />
+    <link rel="alternate" href="https://archiveofourown.org/works/12345" type="text/html" title="Source" />
+  </entry>
+  <entry>
+    <id>urn:bindery:book:66666666777788889999aaaaaaaaaaaa</id>
+    <title>Untitled Draft</title>
+    <updated>2026-08-02T09:00:00Z</updated>
+    <dcterms:identifier>urn:bindery:book:66666666777788889999aaaaaaaaaaaa</dcterms:identifier>
+    <link rel="http://opds-spec.org/acquisition/open-access" href="/opds/download/66666666777788889999aaaaaaaaaaaa.epub" type="application/epub+zip" title="EPUB" length="1024" />
+  </entry>
+</feed>

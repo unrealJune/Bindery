@@ -1,0 +1,77 @@
+@using Bindery.Host.Plugins
+@inject PluginUiProxy PluginUi
+@{
+    var path = Context.Request.Path;
+    var pluginNavigation = PluginUi.AllNavigation();
+}
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#e9472b" />
+    <title>@ViewData["Title"] · Bindery</title>
+    <link rel="stylesheet" href="~/css/bindery.css" asp-append-version="true" />
+    <script src="~/vendor/htmx.min.js" defer></script>
+    <script src="~/js/bindery.js" defer></script>
+</head>
+<body>
+    <!--
+    THESIS: Bindery is a production ledger where every source moves visibly from intake to a filed book; it refuses the generic card-dashboard.
+    OWN-WORLD: Fiber-gray stock, ink-black rules, vermilion stamps, condensed job headings, square docket controls, and status marks that read without color.
+    STORY: The operator sees library health, submits a source, follows its job, resolves failures, and leaves with a durable OPDS catalog.
+    FIRST VIEWPORT: A fixed ledger masthead and section rail frame a wide intake docket beside the live production queue; the URL field and FILE SOURCE action dominate.
+    FORM: Industrial bindery production ledger, third grounded direction, seed 17762336.
+    FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance
+    -->
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="masthead">
+        <a class="wordmark" asp-page="/Index" aria-label="Bindery home">
+            <span class="wordmark-mark" aria-hidden="true">B</span>
+            <span>
+                <strong>Bindery</strong>
+                <small>Private catalog works</small>
+            </span>
+        </a>
+        <div class="masthead-status">
+            <span class="registration-mark" aria-hidden="true"></span>
+            <span>Operator ledger</span>
+            <span>@DateTimeOffset.UtcNow.ToString("yyyy.MM.dd")</span>
+        </div>
+    </header>
+
+    <div class="app-frame">
+        <nav class="section-rail" aria-label="Primary">
+            <a class="@(path == "/" ? "is-current" : null)" asp-page="/Index">Intake</a>
+            <a class="@(path.StartsWithSegments("/Library") || path.StartsWithSegments("/Book") ? "is-current" : null)" asp-page="/Library">Library</a>
+            <a class="@(path.StartsWithSegments("/Downloads") ? "is-current" : null)" asp-page="/Downloads">Jobs</a>
+            <a class="@(path.StartsWithSegments("/Plugins") ? "is-current" : null)" asp-page="/Plugins">Plugins</a>
+            <a class="@(path.StartsWithSegments("/FeedTokens") ? "is-current" : null)" asp-page="/FeedTokens">Readers</a>
+            @if (pluginNavigation.Count > 0)
+            {
+                <span class="rail-divider">Plugin desks</span>
+                @foreach (var entry in pluginNavigation)
+                {
+                    <a class="@(path.StartsWithSegments(entry.Href) ? "is-current" : null)" href="@entry.Href">@entry.Label</a>
+                }
+            }
+        </nav>
+
+        <main id="main" class="work-surface">
+            @if (TempData["Notice"] is string notice)
+            {
+                <div class="notice notice-success" role="status">@notice</div>
+            }
+            @RenderBody()
+        </main>
+    </div>
+
+    <footer class="site-footer">
+        <span>Files are the source of truth.</span>
+        <a href="/opds">OPDS 1.2</a>
+        <a href="/opds/v2/">OPDS 2.0</a>
+        <span>Bindery @ThisAssembly.Version</span>
+    </footer>
+</body>
+</html>

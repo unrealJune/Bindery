@@ -1,0 +1,1 @@
+"""Bindery plugin: FanFicFare."""
