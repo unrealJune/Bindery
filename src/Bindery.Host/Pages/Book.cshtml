@@ -1,0 +1,151 @@
+@page "{id:guid}"
+@model BookModel
+@{
+    var book = Model.Book;
+    ViewData["Title"] = book.Title;
+
+    string Size(long bytes) => bytes switch
+    {
+        >= 1024L * 1024 => $"{bytes / 1024d / 1024d:0.0} MB",
+        >= 1024 => $"{bytes / 1024d:0} KB",
+        _ => $"{bytes} B"
+    };
+}
+
+<header class="page-heading">
+    <div>
+        <h1>@book.Title</h1>
+        <p>@book.AuthorLine</p>
+    </div>
+    <a class="button button-secondary" asp-page="/Library"><span>Back to register</span></a>
+</header>
+
+<div class="book-sheet">
+    <div class="book-plate">
+        @if (book.HasCover)
+        {
+            <img src="/opds/cover/@book.Id" alt="Cover of @book.Title" loading="lazy" />
+        }
+        else
+        {
+            <div class="book-plate-blank" aria-hidden="true">
+                <span>@(book.Title.Length > 0 ? book.Title[..1].ToUpperInvariant() : "?")</span>
+            </div>
+        }
+    </div>
+
+    <div class="book-body">
+        @if (book.Summary.HasValue())
+        {
+            <p class="book-summary">@book.Summary.Value</p>
+        }
+
+        <dl class="book-facts">
+            @if (book.Series.HasValue())
+            {
+                <div>
+                    <dt>Series</dt>
+                    <dd>@book.Series.Value.Name@(book.Series.Value.Index.HasValue() ? $" · #{book.Series.Value.Index.Value:0.##}" : "")</dd>
+                </div>
+            }
+            @if (book.Chapters.HasValue())
+            {
+                <div>
+                    <dt>Chapters</dt>
+                    <dd>@book.Chapters.Value</dd>
+                </div>
+            }
+            @if (book.Language.HasValue())
+            {
+                <div>
+                    <dt>Language</dt>
+                    <dd>@book.Language.Value</dd>
+                </div>
+            }
+            <div>
+                <dt>Filed</dt>
+                <dd>@book.Added.ToLocalTime().ToString("yyyy.MM.dd HH:mm")</dd>
+            </div>
+            <div>
+                <dt>Updated</dt>
+                <dd>@book.Updated.ToLocalTime().ToString("yyyy.MM.dd HH:mm")</dd>
+            </div>
+            @if (book.SourcePlugin.HasValue())
+            {
+                <div>
+                    <dt>Acquired by</dt>
+                    <dd>@book.SourcePlugin.Value</dd>
+                </div>
+            }
+        </dl>
+
+        @if (book.SourceUrl.HasValue())
+        {
+            <p class="book-source">
+                Source: <a href="@book.SourceUrl.Value" rel="noreferrer noopener nofollow">@book.SourceUrl.Value</a>
+            </p>
+        }
+
+        @if (book.Tags.AsList().Count > 0)
+        {
+            <ul class="tag-strip">
+                @foreach (var tag in book.Tags.AsList())
+                {
+                    <li>@tag</li>
+                }
+            </ul>
+        }
+
+        <div class="book-actions">
+            @foreach (var file in book.Files.AsList())
+            {
+                <a class="button button-primary" href="@($"/opds/download/{book.Id}.{file.Format}")">
+                    <span>Download @file.Format.ToUpperInvariant()</span>
+                    <small>@Size(file.SizeBytes)</small>
+                </a>
+            }
+            @if (book.SourceUrl.HasValue())
+            {
+                <form method="post" asp-page-handler="Refresh" asp-route-id="@book.Id">
+                    <button class="button button-secondary" type="submit">
+                        <span>Check source</span>
+                        <small>Re-fetch for changes</small>
+                    </button>
+                </form>
+            }
+        </div>
+    </div>
+</div>
+
+<section class="ledger-section">
+    <div class="section-heading compact">
+        <div>
+            <h2>Files on the volume</h2>
+            <p>Paths are relative to the library root and are the source of truth.</p>
+        </div>
+    </div>
+    <div class="file-table">
+        @foreach (var file in book.Files.AsList())
+        {
+            <div class="file-row">
+                <strong>@file.Format.ToUpperInvariant()</strong>
+                <code>@file.RelativePath</code>
+                <span>@Size(file.SizeBytes)</span>
+                <code class="digest" title="@file.Sha256">@(file.Sha256.Length >= 12 ? file.Sha256[..12] : file.Sha256)</code>
+            </div>
+        }
+    </div>
+</section>
+
+@if (Model.History.Count > 0)
+{
+    <section class="ledger-section">
+        <div class="section-heading compact">
+            <div>
+                <h2>Acquisition history</h2>
+                <p>Every job that produced or updated this book.</p>
+            </div>
+        </div>
+        <partial name="_JobRows" model="Model.History" />
+    </section>
+}

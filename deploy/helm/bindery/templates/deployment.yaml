@@ -1,0 +1,149 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "bindery.fullname" . }}
+  labels:
+    {{- include "bindery.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "bindery.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "bindery.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "bindery.serviceAccountName" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: bindery
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "bindery.fullname" . }}-config
+          env:
+            - name: Bindery__Plugins__Token
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "bindery.pluginTokenSecretName" . }}
+                  key: {{ .Values.bindery.plugins.tokenSecret.key }}
+            {{- with .Values.bindery.oidc.clientSecret.existingSecret }}
+            - name: Bindery__Auth__ClientSecret
+              valueFrom:
+                secretKeyRef:
+                  name: {{ . }}
+                  key: {{ $.Values.bindery.oidc.clientSecret.key }}
+            {{- end }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: library
+              mountPath: /library
+            # The root filesystem is read-only, and .NET still wants somewhere to put
+            # temporary files.
+            - name: tmp
+              mountPath: /tmp
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+        {{- range $plugin := .Values.plugins }}
+        {{- if and $plugin.enabled (eq $plugin.mode "sidecar") }}
+        - name: plugin-{{ $plugin.name | trunc 54 | trimSuffix "-" }}
+          image: {{ $plugin.image | quote }}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: {{ printf "p-%s" $plugin.name | trunc 15 | trimSuffix "-" }}
+              containerPort: {{ $plugin.port }}
+              protocol: TCP
+          env:
+            - name: BINDERY_PLUGIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "bindery.pluginTokenSecretName" $ }}
+                  key: {{ $.Values.bindery.plugins.tokenSecret.key }}
+            - name: BINDERY_PLUGIN_PORT
+              value: {{ $plugin.port | quote }}
+          {{- with $plugin.configSecret }}
+          envFrom:
+            - secretRef:
+                name: {{ . }}
+          {{- end }}
+          volumeMounts:
+            - name: plugin-work-{{ $plugin.name | trunc 50 | trimSuffix "-" }}
+              mountPath: /work
+            - name: plugin-tmp-{{ $plugin.name | trunc 50 | trimSuffix "-" }}
+              mountPath: /tmp
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ $plugin.port }}
+          resources:
+            {{- toYaml $plugin.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml $.Values.pluginSecurityContext | nindent 12 }}
+        {{- end }}
+        {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: data
+          {{- if .Values.persistence.data.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "bindery.dataClaimName" . }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: library
+          {{- if .Values.persistence.library.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "bindery.libraryClaimName" . }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        {{- range $plugin := .Values.plugins }}
+        {{- if and $plugin.enabled (eq $plugin.mode "sidecar") }}
+        - name: plugin-work-{{ $plugin.name | trunc 50 | trimSuffix "-" }}
+          emptyDir: {}
+        - name: plugin-tmp-{{ $plugin.name | trunc 50 | trimSuffix "-" }}
+          emptyDir: {}
+        {{- end }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

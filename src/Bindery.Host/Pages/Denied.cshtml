@@ -1,0 +1,13 @@
+@page "/denied"
+@{
+    ViewData["Title"] = "Not permitted";
+}
+
+<section class="gate">
+    <h1>Not on the list</h1>
+    <p>You signed in successfully, but this account is not allowed to use this Bindery.</p>
+    <p class="gate-note">Ask whoever runs it to add you to <code>Bindery:Auth:AllowedUsers</code>.</p>
+    <form method="post" asp-page="/Signin" asp-page-handler="SignOut">
+        <button class="button button-secondary" type="submit"><span>Sign out</span></button>
+    </form>
+</section>

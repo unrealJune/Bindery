@@ -1,0 +1,154 @@
+@page
+@model LibraryModel
+@{
+    ViewData["Title"] = "Library";
+    var query = Model.Query ?? string.Empty;
+}
+
+<header class="page-heading">
+    <div>
+        <h1>Register of filed books</h1>
+        <p>Everything on the library volume, indexed. The files are the record; this page reads them back.</p>
+    </div>
+    <form method="post" asp-page-handler="Scan">
+        <button class="button button-secondary" type="submit">
+            <span>Rescan volume</span>
+            <small>Rebuild the index</small>
+        </button>
+    </form>
+</header>
+
+<section class="ledger-section">
+    <form class="register-search" method="get">
+        <label for="q">Find a title, author, tag, or series</label>
+        <div class="register-search-row">
+            <input id="q" name="q" class="control control-large" value="@query" placeholder="Search the register…" />
+            <button class="button button-primary" type="submit"><span>Search</span></button>
+            @if (query.Length > 0)
+            {
+                <a class="text-action" asp-page="/Library">Clear</a>
+            }
+        </div>
+    </form>
+
+    <div class="section-heading compact">
+        <div>
+            <h2>@(query.Length > 0 ? $"Matches for “{query}”" : "All books")</h2>
+            <p>@Model.Books.Total.ToString("0000") filed · page @(Model.Books.PageIndex + 1) of @Model.Books.PageCount</p>
+        </div>
+        <span class="live-key"><i aria-hidden="true"></i> Index of @Model.Books.Total</span>
+    </div>
+
+    @if (Model.Books.Items.Count == 0)
+    {
+        <div class="empty-state empty-state-wide">
+            <strong>Nothing filed under that.</strong>
+            <span>File a source from Intake, or rescan the volume if books were copied in by hand.</span>
+        </div>
+    }
+    else
+    {
+        <div class="book-register">
+            @foreach (var book in Model.Books.Items)
+            {
+                <a class="book-row" asp-page="/Book" asp-route-id="@book.Id">
+                    <span class="book-sequence">@book.Added.ToString("MM.dd")</span>
+                    <span class="book-title">
+                        <strong>@book.Title</strong>
+                        <small>@book.AuthorLine</small>
+                    </span>
+                    <span class="book-meta">
+                        @if (book.Series.HasValue())
+                        {
+                            @book.Series.Value.Name
+                        }
+                        else if (book.Files.AsList().Count > 0)
+                        {
+                            @book.Files.AsList()[0].Format.ToUpperInvariant()
+                        }
+                    </span>
+                    <span class="row-arrow" aria-hidden="true">→</span>
+                </a>
+            }
+        </div>
+
+        <nav class="pager" aria-label="Register pages">
+            @if (Model.Books.HasPrevious)
+            {
+                <a class="text-action" asp-page="/Library" asp-route-q="@query" asp-route-page="@(Model.Books.PageIndex - 1)">← Previous</a>
+            }
+            else
+            {
+                <span class="pager-inert">← Previous</span>
+            }
+            <span class="pager-position">@(Model.Books.PageIndex + 1) / @Model.Books.PageCount</span>
+            @if (Model.Books.HasNext)
+            {
+                <a class="text-action" asp-page="/Library" asp-route-q="@query" asp-route-page="@(Model.Books.PageIndex + 1)">Next →</a>
+            }
+            else
+            {
+                <span class="pager-inert">Next →</span>
+            }
+        </nav>
+    }
+</section>
+
+<section class="ledger-section">
+    <div class="section-heading compact">
+        <div>
+            <h2>Browse marks</h2>
+            <p>The same groupings ereaders see in the OPDS catalog.</p>
+        </div>
+    </div>
+    <div class="grouping-grid">
+        <div class="grouping-column">
+            <h3>Authors</h3>
+            @if (Model.Authors.Count == 0)
+            {
+                <p class="grouping-empty">None yet.</p>
+            }
+            else
+            {
+                <ul>
+                    @foreach (var author in Model.Authors.Take(20))
+                    {
+                        <li><a href="/opds/authors/@author.Key">@author.Label</a> <data value="@author.Count">@author.Count</data></li>
+                    }
+                </ul>
+            }
+        </div>
+        <div class="grouping-column">
+            <h3>Series</h3>
+            @if (Model.SeriesGroups.Count == 0)
+            {
+                <p class="grouping-empty">None yet.</p>
+            }
+            else
+            {
+                <ul>
+                    @foreach (var series in Model.SeriesGroups.Take(20))
+                    {
+                        <li><a href="/opds/series/@series.Key">@series.Label</a> <data value="@series.Count">@series.Count</data></li>
+                    }
+                </ul>
+            }
+        </div>
+        <div class="grouping-column">
+            <h3>Tags</h3>
+            @if (Model.Tags.Count == 0)
+            {
+                <p class="grouping-empty">None yet.</p>
+            }
+            else
+            {
+                <ul>
+                    @foreach (var tag in Model.Tags.Take(20))
+                    {
+                        <li><a href="/opds/tags/@tag.Key">@tag.Label</a> <data value="@tag.Count">@tag.Count</data></li>
+                    }
+                </ul>
+            }
+        </div>
+    </div>
+</section>

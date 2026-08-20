@@ -1,0 +1,33 @@
+@page "/plugins/{name}"
+@model PluginDeskModel
+@{
+    ViewData["Title"] = Model.Descriptor.DisplayName;
+}
+
+<header class="page-heading">
+    <div>
+        <h1>@Model.Descriptor.DisplayName</h1>
+        <p>Screens served by the plugin, sanitized and rendered inside Bindery's chrome.</p>
+    </div>
+    <a class="button button-secondary" asp-page="/Plugins"><span>Plugin settings</span></a>
+</header>
+
+@if (Model.Nav.Count > 0)
+{
+    <nav class="desk-tabs" aria-label="@Model.Descriptor.DisplayName screens">
+        @foreach (var entry in Model.Nav)
+        {
+            <a class="@(entry.Href == Model.FragmentUrl ? "is-current" : null)" href="@entry.Href">@entry.Label</a>
+        }
+    </nav>
+}
+
+@* The fragment is fetched rather than inlined so that a slow or wedged plugin delays its
+   own panel and nothing else on the page. *@
+<div class="plugin-surface"
+     hx-get="@Model.FragmentUrl"
+     hx-trigger="load"
+     hx-swap="innerHTML"
+     hx-push-url="false">
+    <p class="plugin-loading">Asking @Model.Descriptor.DisplayName…</p>
+</div>

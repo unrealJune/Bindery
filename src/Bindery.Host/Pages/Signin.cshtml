@@ -1,0 +1,26 @@
+@page "/signin"
+@model SigninModel
+@{
+    ViewData["Title"] = "Sign in";
+    var returnUrl = Request.Query["returnUrl"].ToString();
+}
+
+<section class="gate">
+    <h1>Bindery</h1>
+    <p>The catalog is private. Sign in with your identity provider to reach the operator ledger.</p>
+
+    @if (Model.Problem is not null)
+    {
+        <p class="notice notice-error" role="alert">@Model.Problem</p>
+    }
+
+    <form method="post">
+        <input type="hidden" name="returnUrl" value="@returnUrl" />
+        <button class="button button-primary" type="submit">
+            <span>Continue</span>
+            <small>Single sign-on</small>
+        </button>
+    </form>
+
+    <p class="gate-note">Ereaders do not sign in here. Issue them a reader token instead.</p>
+</section>

@@ -1,0 +1,116 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/OWNER/bindery
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  fsGroup: 10001
+  fsGroupChangePolicy: OnRootMismatch
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+
+pluginSecurityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: false
+  className: ""
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+  hosts:
+    - host: bindery.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+resources: {}
+
+persistence:
+  data:
+    enabled: true
+    existingClaim: ""
+    accessModes: ["ReadWriteOnce"]
+    size: 1Gi
+    storageClass: ""
+  library:
+    enabled: true
+    existingClaim: ""
+    accessModes: ["ReadWriteOnce"]
+    size: 20Gi
+    storageClass: ""
+
+bindery:
+  catalogTitle: Bindery
+  catalogSubtitle: A small self-hosted library
+  publicBaseUrl: ""
+  pageSize: 24
+  auth:
+    mode: Oidc
+    authority: ""
+    clientId: ""
+    requireHttpsMetadata: true
+    scopes: ["openid", "profile", "email"]
+    allowedUsers: []
+    nameClaim: name
+    sessionLifetime: 14.00:00:00
+  downloads:
+    concurrency: 2
+    maxAttempts: 3
+    retryDelay: 00:00:30
+    idleTimeout: 00:05:00
+    maxArtifactBytes: 536870912
+    historyLimit: 500
+  plugins:
+    tokenSecret:
+      existingSecret: ""
+      key: token
+  oidc:
+    clientSecret:
+      existingSecret: ""
+      key: client-secret
+
+plugins:
+  - name: fanficfare
+    enabled: true
+    mode: sidecar
+    image: ghcr.io/OWNER/bindery-plugin-fanficfare:0.1.0
+    port: 8080
+    resources:
+      limits:
+        memory: 512Mi
+    configSecret: ""
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

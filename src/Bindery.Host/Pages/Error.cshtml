@@ -1,0 +1,15 @@
+@page "/error"
+@model ErrorModel
+@{
+    ViewData["Title"] = "Something jammed";
+}
+
+<section class="gate">
+    <h1>Something jammed</h1>
+    <p>The request failed before it produced a page. The details are in the server log, not here.</p>
+    @if (Model.RequestId is not null)
+    {
+        <p class="gate-note">Request <code>@Model.RequestId</code></p>
+    }
+    <a class="button button-secondary" asp-page="/Index"><span>Back to intake</span></a>
+</section>

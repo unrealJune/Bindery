@@ -1,0 +1,48 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "bindery.fullname" . }}-config
+  labels:
+    {{- include "bindery.labels" . | nindent 4 }}
+data:
+  Bindery__CatalogTitle: {{ .Values.bindery.catalogTitle | quote }}
+  Bindery__CatalogSubtitle: {{ .Values.bindery.catalogSubtitle | quote }}
+  Bindery__DataPath: "/data"
+  Bindery__LibraryPath: "/library"
+  {{- with .Values.bindery.publicBaseUrl }}
+  Bindery__PublicBaseUrl: {{ . | quote }}
+  {{- end }}
+  Bindery__PageSize: {{ .Values.bindery.pageSize | quote }}
+  Bindery__Auth__Mode: {{ .Values.bindery.auth.mode | quote }}
+  {{- with .Values.bindery.auth.authority }}
+  Bindery__Auth__Authority: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.bindery.auth.clientId }}
+  Bindery__Auth__ClientId: {{ . | quote }}
+  {{- end }}
+  Bindery__Auth__RequireHttpsMetadata: {{ .Values.bindery.auth.requireHttpsMetadata | quote }}
+  Bindery__Auth__NameClaim: {{ .Values.bindery.auth.nameClaim | quote }}
+  Bindery__Auth__SessionLifetime: {{ .Values.bindery.auth.sessionLifetime | quote }}
+  {{- range $i, $scope := .Values.bindery.auth.scopes }}
+  Bindery__Auth__Scopes__{{ $i }}: {{ $scope | quote }}
+  {{- end }}
+  {{- range $i, $user := .Values.bindery.auth.allowedUsers }}
+  Bindery__Auth__AllowedUsers__{{ $i }}: {{ $user | quote }}
+  {{- end }}
+  Bindery__Downloads__Concurrency: {{ .Values.bindery.downloads.concurrency | quote }}
+  Bindery__Downloads__MaxAttempts: {{ .Values.bindery.downloads.maxAttempts | quote }}
+  Bindery__Downloads__RetryDelay: {{ .Values.bindery.downloads.retryDelay | quote }}
+  Bindery__Downloads__IdleTimeout: {{ .Values.bindery.downloads.idleTimeout | quote }}
+  Bindery__Downloads__MaxArtifactBytes: {{ .Values.bindery.downloads.maxArtifactBytes | quote }}
+  Bindery__Downloads__HistoryLimit: {{ .Values.bindery.downloads.historyLimit | quote }}
+  {{- range $i, $plugin := .Values.plugins }}
+  Bindery__Plugins__Registry__{{ $i }}__Name: {{ $plugin.name | quote }}
+  Bindery__Plugins__Registry__{{ $i }}__Enabled: {{ $plugin.enabled | quote }}
+  {{- if eq $plugin.mode "sidecar" }}
+  Bindery__Plugins__Registry__{{ $i }}__BaseUrl: {{ printf "http://127.0.0.1:%v" $plugin.port | quote }}
+  {{- else if eq $plugin.mode "service" }}
+  Bindery__Plugins__Registry__{{ $i }}__BaseUrl: {{ printf "http://%s:%v" (include "bindery.pluginServiceName" (dict "root" $ "plugin" $plugin)) $plugin.port | quote }}
+  {{- else }}
+  {{- fail (printf "plugins[%d].mode must be sidecar or service" $i) }}
+  {{- end }}
+  {{- end }}

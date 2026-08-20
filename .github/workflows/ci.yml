@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - uses: azure/setup-helm@v4
+      - name: Build
+        run: dotnet build Bindery.sln --configuration Release
+      - name: Test
+        run: dotnet test Bindery.sln --configuration Release --no-build
+      - name: Helm lint
+        run: helm lint deploy/helm/bindery
+      - name: Helm template
+        run: helm template bindery deploy/helm/bindery
+      - name: Plugin conformance self-test
+        run: python tests/conformance/run.py --self-test --no-color

@@ -258,6 +258,16 @@ public static class PluginUiEndpoints
             return Results.NotFound();
         }
 
+        // A browser navigating straight here — a bookmark, a reload, a nav link — wants a
+        // page, not the inside of a div. Send it to the shell, which fetches this same URL
+        // back with htmx.
+        if (HttpMethods.IsGet(context.Request.Method)
+            && !context.Request.Headers.ContainsKey("HX-Request"))
+        {
+            var path = "/" + (rest ?? string.Empty).TrimStart('/');
+            return Results.LocalRedirect($"/plugins/{Uri.EscapeDataString(name)}?path={Uri.EscapeDataString(path)}");
+        }
+
         if (!HttpMethods.IsGet(context.Request.Method)
             && !HttpMethods.IsHead(context.Request.Method))
         {

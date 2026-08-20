@@ -1,0 +1,53 @@
+services:
+  bindery:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: bindery:dev
+    depends_on:
+      fanficfare:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      Bindery__CatalogTitle: Bindery Dev
+      Bindery__DataPath: /data
+      Bindery__LibraryPath: /library
+      # No auth is acceptable only on a developer's own machine. Do not copy this to a deployment.
+      Bindery__Auth__Mode: None
+      Bindery__Plugins__Token: dev-plugin-token
+      Bindery__Plugins__Registry__0__Name: fanficfare
+      Bindery__Plugins__Registry__0__BaseUrl: http://fanficfare:8080
+      Bindery__Plugins__Registry__0__Enabled: "true"
+    volumes:
+      - bindery-data:/data
+      - bindery-library:/library
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  fanficfare:
+    build:
+      context: ../plugins/fanficfare
+      dockerfile: Dockerfile
+    image: bindery-plugin-fanficfare:dev
+    environment:
+      BINDERY_PLUGIN_TOKEN: dev-plugin-token
+      BINDERY_PLUGIN_PORT: "8080"
+    # The plugin intentionally gets no /library or /data mount. Artifacts move over HTTP.
+    volumes:
+      - fanficfare-work:/work
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys,urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=4).status == 200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  bindery-data:
+  bindery-library:
+  fanficfare-work:

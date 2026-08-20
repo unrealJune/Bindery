@@ -1,0 +1,17 @@
+.git
+.github
+.vs
+.idea
+**/bin
+**/obj
+**/.pytest_cache
+**/__pycache__
+**/*.pyc
+.venv
+artifacts
+data
+library
+*.db
+*.db-shm
+*.db-wal
+NuGet.offline.config

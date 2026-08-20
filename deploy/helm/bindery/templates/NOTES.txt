@@ -1,0 +1,16 @@
+Bindery is installed.
+
+HTTP service:
+  {{ include "bindery.fullname" . }}:{{ .Values.service.port }}
+
+Plugin registry entries rendered: {{ len .Values.plugins }}
+
+Secrets are deliberately not printed here. The host-to-plugin bearer token comes from:
+  secret/{{ include "bindery.pluginTokenSecretName" . }} key {{ .Values.bindery.plugins.tokenSecret.key }}
+
+{{- if eq .Values.bindery.auth.mode "None" }}
+Auth is disabled. That is for local or throwaway clusters only, not the internet.
+{{- else if not .Values.bindery.oidc.clientSecret.existingSecret }}
+OIDC mode is enabled, but no OIDC client secret Secret was referenced. Create one and set:
+  bindery.oidc.clientSecret.existingSecret
+{{- end }}

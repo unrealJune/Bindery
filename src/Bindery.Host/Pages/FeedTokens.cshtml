@@ -1,0 +1,85 @@
+@page
+@model FeedTokensModel
+@{
+    ViewData["Title"] = "Readers";
+}
+
+<header class="page-heading">
+    <div>
+        <h1>Reader credentials</h1>
+        <p>Ereaders cannot complete a sign-in redirect, so each device gets its own token. Tokens read the catalog and nothing else.</p>
+    </div>
+    <span class="folio">@Model.Tokens.Count(token => token.RevokedAt is null).ToString("00") active</span>
+</header>
+
+@if (Model.IssuedSecret is not null)
+{
+    <div class="token-reveal" role="alert">
+        <div>
+            <strong>Token for @Model.IssuedName</strong>
+            <p>Copy it now. It is stored hashed and cannot be shown again.</p>
+        </div>
+        <code class="token-secret">@Model.IssuedSecret</code>
+        <p class="token-usage">
+            Point the reader at <code>/opds</code> and give it this value as the password
+            (any username), or as a bearer token.
+        </p>
+    </div>
+}
+
+<section class="ledger-section">
+    <div class="section-heading compact">
+        <div>
+            <h2>Issue a token</h2>
+            <p>Name it after the device so revoking the right one later is obvious.</p>
+        </div>
+    </div>
+    <form method="post" asp-page-handler="Issue" class="token-form">
+        <label for="token-name">Device name</label>
+        <input id="token-name" name="name" class="control" placeholder="Kobo Clara" required maxlength="80" />
+        <button class="button button-primary" type="submit"><span>Issue token</span></button>
+    </form>
+</section>
+
+<section class="ledger-section">
+    <div class="section-heading compact">
+        <div>
+            <h2>Issued tokens</h2>
+            <p>Revoking is immediate and affects only the named device.</p>
+        </div>
+    </div>
+
+    @if (Model.Tokens.Count == 0)
+    {
+        <div class="empty-state empty-state-wide">
+            <strong>No tokens issued.</strong>
+            <span>Issue one per device that should see the catalog.</span>
+        </div>
+    }
+    else
+    {
+        <div class="token-table">
+            @foreach (var token in Model.Tokens)
+            {
+                <div class="token-row" data-state="@(token.RevokedAt is null ? "active" : "revoked")">
+                    <div>
+                        <strong>@token.Name</strong>
+                        <small>@token.Prefix… · issued @token.CreatedAt.ToLocalTime().ToString("yyyy.MM.dd")</small>
+                    </div>
+                    <span>@(token.LastUsedAt is null ? "never used" : $"last used {token.LastUsedAt.Value.ToLocalTime():yyyy.MM.dd HH:mm}")</span>
+                    @if (token.RevokedAt is null)
+                    {
+                        <form method="post" asp-page-handler="Revoke">
+                            <input type="hidden" name="id" value="@token.Id" />
+                            <button class="text-action danger" type="submit">Revoke</button>
+                        </form>
+                    }
+                    else
+                    {
+                        <span class="token-revoked">revoked @token.RevokedAt.Value.ToLocalTime().ToString("yyyy.MM.dd")</span>
+                    }
+                </div>
+            }
+        </div>
+    }
+</section>

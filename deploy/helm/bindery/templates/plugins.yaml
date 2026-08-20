@@ -1,0 +1,96 @@
+{{- range $plugin := .Values.plugins }}
+{{- if and $plugin.enabled (eq $plugin.mode "service") }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "bindery.pluginServiceName" (dict "root" $ "plugin" $plugin) }}
+  labels:
+    {{- include "bindery.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: plugin
+    bindery.github.io/plugin: {{ $plugin.name | quote }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "bindery.name" $ }}
+      app.kubernetes.io/instance: {{ $.Release.Name }}
+      app.kubernetes.io/component: plugin
+      bindery.github.io/plugin: {{ $plugin.name | quote }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "bindery.name" $ }}
+        app.kubernetes.io/instance: {{ $.Release.Name }}
+        app.kubernetes.io/component: plugin
+        bindery.github.io/plugin: {{ $plugin.name | quote }}
+    spec:
+      serviceAccountName: {{ include "bindery.serviceAccountName" $ }}
+      {{- with $.Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml $.Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: plugin
+          image: {{ $plugin.image | quote }}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: {{ $plugin.port }}
+              protocol: TCP
+          env:
+            - name: BINDERY_PLUGIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "bindery.pluginTokenSecretName" $ }}
+                  key: {{ $.Values.bindery.plugins.tokenSecret.key }}
+            - name: BINDERY_PLUGIN_PORT
+              value: {{ $plugin.port | quote }}
+          {{- with $plugin.configSecret }}
+          envFrom:
+            - secretRef:
+                name: {{ . }}
+          {{- end }}
+          volumeMounts:
+            - name: work
+              mountPath: /work
+            - name: tmp
+              mountPath: /tmp
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          resources:
+            {{- toYaml $plugin.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml $.Values.pluginSecurityContext | nindent 12 }}
+      volumes:
+        - name: work
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "bindery.pluginServiceName" (dict "root" $ "plugin" $plugin) }}
+  labels:
+    {{- include "bindery.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: plugin
+    bindery.github.io/plugin: {{ $plugin.name | quote }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ $plugin.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: {{ include "bindery.name" $ }}
+    app.kubernetes.io/instance: {{ $.Release.Name }}
+    app.kubernetes.io/component: plugin
+    bindery.github.io/plugin: {{ $plugin.name | quote }}
+{{- end }}
+{{- end }}
