@@ -29,6 +29,9 @@ data:
   {{- range $i, $user := .Values.bindery.auth.allowedUsers }}
   Bindery__Auth__AllowedUsers__{{ $i }}: {{ $user | quote }}
   {{- end }}
+  {{- range $i, $source := .Values.bindery.security.formActionSources }}
+  Bindery__Security__FormActionSources__{{ $i }}: {{ $source | quote }}
+  {{- end }}
   Bindery__Downloads__Concurrency: {{ .Values.bindery.downloads.concurrency | quote }}
   Bindery__Downloads__MaxAttempts: {{ .Values.bindery.downloads.maxAttempts | quote }}
   Bindery__Downloads__RetryDelay: {{ .Values.bindery.downloads.retryDelay | quote }}

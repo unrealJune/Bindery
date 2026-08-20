@@ -117,7 +117,7 @@ if (!app.Environment.IsDevelopment())
 
 app.UseResponseCompression();
 app.UseStaticFiles();
-app.UseSecurityHeaders();
+app.UseSecurityHeaders(options);
 app.UseRouting();
 app.UseAuthentication();
 app.UseAuthorization();

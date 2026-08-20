@@ -99,6 +99,13 @@ bindery:
     clientSecret:
       existingSecret: ""
       key: client-secret
+  security:
+    # Extra origins for the CSP form-action list. `'self'` and the OIDC authority
+    # (bindery.auth.authority) are always included, so most deployments leave this
+    # empty. Add an origin only when a sign-in or sign-out POST redirects somewhere
+    # else — browsers enforce form-action across the whole redirect chain, and an
+    # origin missing here is a login that fails silently in the browser.
+    formActionSources: []
 
 plugins:
   - name: fanficfare

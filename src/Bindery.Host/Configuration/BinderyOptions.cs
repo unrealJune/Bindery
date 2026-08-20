@@ -33,6 +33,25 @@ public sealed class BinderyOptions
     public DownloadOptions Downloads { get; set; } = new();
 
     public PluginHostOptions Plugins { get; set; } = new();
+
+    public SecurityOptions Security { get; set; } = new();
+}
+
+public sealed class SecurityOptions
+{
+    /// <summary>
+    /// Extra origins appended to the CSP <c>form-action</c> list, on top of <c>'self'</c> and
+    /// the OIDC authority (which is added automatically — see
+    /// <see cref="SecurityHeaders.BuildContentSecurityPolicy"/>).
+    /// </summary>
+    /// <remarks>
+    /// Only needed when a sign-in or sign-out POST is redirected somewhere other than the
+    /// authority: an IdP that posts logout to a separate host, or a proxy that bounces the
+    /// callback through a third origin. Browsers enforce <c>form-action</c> across the whole
+    /// redirect chain, so an origin missing here is a login that dies silently in the browser
+    /// with nothing in the server log.
+    /// </remarks>
+    public IList<string> FormActionSources { get; set; } = new List<string>();
 }
 
 public enum AuthMode
