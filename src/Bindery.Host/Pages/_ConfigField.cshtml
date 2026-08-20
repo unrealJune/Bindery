@@ -1,0 +1,62 @@
+@model ConfigFieldView
+@{
+    var field = Model.Field;
+    var id = "field-" + field.Key;
+    var name = "field:" + field.Key;
+}
+
+<div class="field">
+    @if (field.Type.IsBoolField)
+    {
+        <label class="field-check" for="@id">
+            <input type="checkbox" id="@id" name="@name" value="true" checked="@(Model.Value == "true")" />
+            <span>@field.Label</span>
+        </label>
+    }
+    else
+    {
+        <label for="@id">
+            @field.Label
+            @if (field.Required)
+            {
+                <abbr title="Required">*</abbr>
+            }
+        </label>
+
+        @if (field.Type.IsTextField)
+        {
+            <textarea id="@id" name="@name" class="control control-text" rows="8" placeholder="@field.Placeholder.OrNull()">@Model.Value</textarea>
+        }
+        else if (field.Type.IsSelectField)
+        {
+            <select id="@id" name="@name" class="control">
+                @foreach (var option in field.Options.AsList())
+                {
+                    <option value="@option.Value" selected="@(option.Value == Model.Value)">@option.Label</option>
+                }
+            </select>
+        }
+        else if (field.Type.IsSecret)
+        {
+            @* A stored secret is never rendered back: the box is empty and an empty box
+               means "unchanged". *@
+            <input type="password" id="@id" name="@name" class="control" autocomplete="new-password"
+                   placeholder="@(Model.SecretIsSet ? "•••••••• stored" : field.Placeholder.OrDefault(string.Empty))" />
+        }
+        else if (field.Type.IsIntField)
+        {
+            <input type="number" id="@id" name="@name" class="control" value="@Model.Value"
+                   min="@(field.Min.OrNullable()?.ToString())" max="@(field.Max.OrNullable()?.ToString())" />
+        }
+        else
+        {
+            <input type="@(field.Type.IsUrlField ? "url" : "text")" id="@id" name="@name" class="control"
+                   value="@Model.Value" placeholder="@field.Placeholder.OrNull()" />
+        }
+    }
+
+    @if (field.Help.HasValue())
+    {
+        <small class="field-help">@field.Help.Value</small>
+    }
+</div>

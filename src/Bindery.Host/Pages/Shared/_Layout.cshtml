@@ -38,6 +38,12 @@
             <span class="registration-mark" aria-hidden="true"></span>
             <span>Operator ledger</span>
             <span>@DateTimeOffset.UtcNow.ToString("yyyy.MM.dd")</span>
+            @if (User.Identity?.IsAuthenticated == true)
+            {
+                <form method="post" asp-page="/Signin" asp-page-handler="SignOut">
+                    <button class="text-action" type="submit">Sign out</button>
+                </form>
+            }
         </div>
     </header>
 

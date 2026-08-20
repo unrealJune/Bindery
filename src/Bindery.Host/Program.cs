@@ -81,6 +81,7 @@ builder.Services.AddRazorPages(razor =>
     razor.Conventions.AuthorizeFolder("/", AuthPolicies.UseUi);
     razor.Conventions.AllowAnonymousToPage("/Signin");
     razor.Conventions.AllowAnonymousToPage("/Denied");
+    razor.Conventions.AllowAnonymousToPage("/Error");
 });
 
 builder.Services.AddAntiforgery(antiforgery =>

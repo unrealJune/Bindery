@@ -1,0 +1,47 @@
+@model Bindery.Host.Plugins.ActionResult
+
+@if (!Model.Succeeded)
+{
+    <p class="notice notice-error" role="alert">@Model.Error</p>
+}
+else if (Model.Kind == "list")
+{
+    @if (Model.Items.Count == 0)
+    {
+        <p class="action-empty">Nothing came back.</p>
+    }
+    else
+    {
+        <ul class="action-list">
+            @foreach (var item in Model.Items)
+            {
+                <li>
+                    <div>
+                        <strong>@item.Title</strong>
+                        @if (item.Subtitle is not null)
+                        {
+                            <small>@item.Subtitle</small>
+                        }
+                    </div>
+                    @if (item.Url is not null)
+                    {
+                        @* Handed to intake rather than fetched here: everything that
+                           acquires a book goes through the job ledger. *@
+                        <form method="post" asp-page="/Index" asp-page-handler="Queue">
+                            <input type="hidden" name="SourceUrl" value="@item.Url" />
+                            <button class="text-action" type="submit">File this</button>
+                        </form>
+                    }
+                </li>
+            }
+        </ul>
+    }
+}
+else if (Model.Kind == "text")
+{
+    <pre class="action-text">@Model.Text</pre>
+}
+else
+{
+    <p class="notice notice-@(Model.Level ?? "info")" role="status">@Model.Message</p>
+}

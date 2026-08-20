@@ -26,6 +26,17 @@ public class BinderyDbContext(DbContextOptions<BinderyDbContext> options) : DbCo
 
     public DbSet<FeedTokenEntity> FeedTokens => Set<FeedTokenEntity>();
 
+    /// <summary>
+    /// SQLite has no date type, and its provider refuses to order by or compare a
+    /// <see cref="DateTimeOffset"/> at all. Storing UTC ticks makes both work, sorts
+    /// correctly as an integer, and round-trips an instant exactly — which is all Bindery
+    /// ever stores; every timestamp here is produced as UTC.
+    /// </summary>
+    protected override void ConfigureConventions(ModelConfigurationBuilder configuration) =>
+        configuration
+            .Properties<DateTimeOffset>()
+            .HaveConversion<UtcTicksConverter>();
+
     protected override void OnModelCreating(ModelBuilder model)
     {
         model.Entity<BookEntity>(book =>
@@ -126,3 +137,9 @@ public class BinderyDbContext(DbContextOptions<BinderyDbContext> options) : DbCo
         base.OnModelCreating(model);
     }
 }
+
+/// <summary>An instant as UTC ticks, so SQLite can compare and order it.</summary>
+public sealed class UtcTicksConverter()
+    : Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter<DateTimeOffset, long>(
+        value => value.UtcTicks,
+        stored => new DateTimeOffset(stored, TimeSpan.Zero));

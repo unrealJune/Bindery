@@ -1,0 +1,139 @@
+@page
+@model PluginsModel
+@using Bindery.Host.Plugins
+@{
+    ViewData["Title"] = "Plugins";
+}
+
+<header class="page-heading">
+    <div>
+        <h1>Installed downloaders</h1>
+        <p>Each plugin is a container that speaks HTTP. Bindery asks it what it is; nothing here is discovered from disk.</p>
+    </div>
+    <span class="folio">@Model.Cards.Count.ToString("00") configured</span>
+</header>
+
+@if (Model.Cards.Count == 0)
+{
+    <div class="empty-state empty-state-wide">
+        <strong>No plugins are configured.</strong>
+        <span>Add an entry under <code>Bindery:Plugins:Registry</code> — the Helm chart renders it into a ConfigMap.</span>
+    </div>
+}
+
+@foreach (var card in Model.Cards)
+{
+    var descriptor = card.Descriptor;
+    var manifest = descriptor.Manifest;
+    var state = descriptor.IsUsable ? "ready" : "failed";
+
+    <section class="plugin-docket" aria-labelledby="plugin-@descriptor.Name">
+        <div class="docket-heading">
+            <h2 id="plugin-@descriptor.Name">
+                <span class="status-mark status-@state" aria-hidden="true"></span>
+                @descriptor.DisplayName
+            </h2>
+            <span>@descriptor.Entry.BaseUrl</span>
+        </div>
+
+        <dl class="plugin-facts">
+            <div>
+                <dt>Version</dt>
+                <dd>@(manifest?.Version ?? "—")</dd>
+            </div>
+            <div>
+                <dt>Protocol</dt>
+                <dd>v@(manifest?.ProtocolVersion.ToString() ?? "—")</dd>
+            </div>
+            <div>
+                <dt>URL patterns</dt>
+                <dd>@(descriptor.Compiled?.Patterns.Length ?? 0)</dd>
+            </div>
+            <div>
+                <dt>UI mode</dt>
+                <dd>@(manifest?.Ui.Mode.Wire ?? "—")</dd>
+            </div>
+            <div>
+                <dt>Last asked</dt>
+                <dd>@(descriptor.RefreshedAt is null ? "never" : descriptor.RefreshedAt.Value.ToLocalTime().ToString("HH:mm:ss"))</dd>
+            </div>
+        </dl>
+
+        @if (descriptor.Error is not null)
+        {
+            <p class="notice notice-error" role="alert">@descriptor.Error</p>
+        }
+
+        <form method="post" asp-page-handler="Refresh" class="plugin-refresh">
+            <input type="hidden" name="plugin" value="@descriptor.Name" />
+            <button class="text-action" type="submit">Ask again</button>
+        </form>
+
+        @if (manifest is not null && manifest.Config.AsList().Count > 0)
+        {
+            <form method="post" asp-page-handler="Save" class="plugin-form">
+                <input type="hidden" name="plugin" value="@descriptor.Name" />
+                <h3>Settings</h3>
+                @foreach (var field in manifest.Config.AsList())
+                {
+                    <partial name="_ConfigField" model="new ConfigFieldView(field, card.Settings.ValueFor(field.Key), card.Settings.IsSecretSet(field.Key))" />
+                }
+                <div class="form-actions">
+                    <button class="button button-primary" type="submit"><span>Save settings</span></button>
+                </div>
+            </form>
+
+            @if (card.Settings.SecretsSet.Count > 0)
+            {
+                <form method="post" asp-page-handler="Clear" class="plugin-secrets">
+                    <input type="hidden" name="plugin" value="@descriptor.Name" />
+                    <span>Stored secrets:</span>
+                    @foreach (var key in card.Settings.SecretsSet)
+                    {
+                        <button class="text-action danger" type="submit" name="key" value="@key">Clear @key</button>
+                    }
+                </form>
+            }
+        }
+
+        @if (manifest is not null && manifest.Actions.AsList().Count > 0)
+        {
+            <div class="plugin-actions">
+                <h3>Actions</h3>
+                @foreach (var action in manifest.Actions.AsList())
+                {
+                    var panel = $"action-{descriptor.Name}-{action.Name}";
+                    <form class="action-form"
+                          method="post"
+                          asp-page-handler="Run"
+                          hx-post="/Plugins?handler=Run"
+                          hx-target="#@panel"
+                          hx-swap="innerHTML">
+                        <input type="hidden" name="plugin" value="@descriptor.Name" />
+                        <input type="hidden" name="action" value="@action.Name" />
+                        <h4>@action.Label</h4>
+                        @if (action.Description.HasValue())
+                        {
+                            <p class="action-help">@action.Description.Value</p>
+                        }
+                        @foreach (var field in action.Input.AsList())
+                        {
+                            <partial name="_ConfigField" model="new ConfigFieldView(field, string.Empty, false)" />
+                        }
+                        <div class="form-actions">
+                            <button class="button button-secondary" type="submit"><span>Run @action.Label</span></button>
+                        </div>
+                        <div id="@panel" class="action-panel" role="status"></div>
+                    </form>
+                }
+            </div>
+        }
+
+        @if (manifest is not null && manifest.Ui.Mode.ServesHtml)
+        {
+            <p class="plugin-desk-link">
+                <a class="text-action" href="/plugins/@descriptor.Name/ui/">Open @descriptor.DisplayName desk →</a>
+            </p>
+        }
+    </section>
+}
