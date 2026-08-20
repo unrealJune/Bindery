@@ -63,8 +63,11 @@ type Grouping =
 // ---------------------------------------------------------------- naming
 
 /// Callers include C# code where a string can still be null, so text arriving from the
-/// host is normalized once here rather than guarded at every use.
-let internal orEmpty (value: string | null) : string =
+/// host is normalized once here rather than guarded at every use. The parameter is typed
+/// as plain `string` (rather than `string | null`) because the union-with-null syntax
+/// needs a newer F# compiler than the .NET 8 SDK the Docker build uses; `null` is still
+/// matched safely at runtime below.
+let internal orEmpty (value: string) : string =
     match value with
     | null -> ""
     | text -> text
