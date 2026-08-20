@@ -3,8 +3,10 @@
 A small self-hosted service that serves an **OPDS catalog** and acquires books through
 **downloader plugins**.
 
-> **Status: pre-alpha.** The design is settled and written down; the code is being built.
-> See [`PLAN.md`](PLAN.md) for the architecture and roadmap.
+> **Status: alpha.** The host, the OPDS feeds, the plugin protocol, the reference plugin,
+> the web UI and the deployment artifacts all exist and are tested. Expect rough edges, not
+> missing floors. See [`PLAN.md`](PLAN.md) for the roadmap and
+> [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for what was actually built.
 
 ---
 
@@ -97,17 +99,53 @@ are the source of truth; the database is a rebuildable index.
 OIDC (generic — Entra, Authentik, Keycloak, Dex) for the web UI. Separate long-lived feed
 tokens for OPDS, because ereader apps can't do an OAuth redirect.
 
+## Running it
+
+The quickest look, with a plugin alongside it:
+
+```bash
+docker compose -f deploy/docker-compose.yml up --build
+```
+
+Bindery is then on <http://localhost:8080>, with authentication switched off — which is
+fine on your own machine and nowhere else. Add a URL on the home page and watch it become
+a book; point an ereader at `http://localhost:8080/opds`.
+
+On Kubernetes:
+
+```bash
+helm install bindery deploy/helm/bindery \
+  --set bindery.auth.authority=https://id.example.com \
+  --set bindery.auth.clientId=bindery \
+  --set bindery.oidc.clientSecret.existingSecret=bindery-oidc
+```
+
+Installing a plugin is an entry in `values.plugins` — `mode: sidecar` for one that should
+live and die with the host, `mode: service` for one that deserves its own Deployment. See
+[`deploy/helm/bindery/README.md`](deploy/helm/bindery/README.md).
+
 ## Development
 
 ```bash
 dotnet build Bindery.sln
-dotnet test  Bindery.sln
-docker compose -f deploy/docker-compose.yml up --build
+dotnet test  Bindery.sln                 # unit tests + host integration tests
+helm lint     deploy/helm/bindery
 helm template deploy/helm/bindery
+
+python tests/conformance/run.py --base-url http://localhost:8080   # any plugin image
 ```
 
+Running the host straight from the checkout, without containers:
+
+```bash
+Bindery__Auth__Mode=None dotnet run --project src/Bindery.Host
+```
+
+Requires the .NET 8 SDK; the repo targets `net8.0` deliberately, so it builds in more
+places than the newest SDK is installed.
+
 See [`CLAUDE.md`](CLAUDE.md) for conventions and the constraints that are easy to violate
-by accident.
+by accident, and [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for how the pieces fit.
 
 ## License
 

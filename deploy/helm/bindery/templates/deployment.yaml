@@ -57,6 +57,10 @@ spec:
               mountPath: /data
             - name: library
               mountPath: /library
+            # The root filesystem is read-only, and .NET still wants somewhere to put
+            # temporary files.
+            - name: tmp
+              mountPath: /tmp
           livenessProbe:
             httpGet:
               path: /healthz
@@ -94,6 +98,8 @@ spec:
           volumeMounts:
             - name: plugin-work-{{ $plugin.name | trunc 50 | trimSuffix "-" }}
               mountPath: /work
+            - name: plugin-tmp-{{ $plugin.name | trunc 50 | trimSuffix "-" }}
+              mountPath: /tmp
           livenessProbe:
             httpGet:
               path: /healthz
@@ -105,6 +111,8 @@ spec:
         {{- end }}
         {{- end }}
       volumes:
+        - name: tmp
+          emptyDir: {}
         - name: data
           {{- if .Values.persistence.data.enabled }}
           persistentVolumeClaim:
@@ -122,6 +130,8 @@ spec:
         {{- range $plugin := .Values.plugins }}
         {{- if and $plugin.enabled (eq $plugin.mode "sidecar") }}
         - name: plugin-work-{{ $plugin.name | trunc 50 | trimSuffix "-" }}
+          emptyDir: {}
+        - name: plugin-tmp-{{ $plugin.name | trunc 50 | trimSuffix "-" }}
           emptyDir: {}
         {{- end }}
         {{- end }}
