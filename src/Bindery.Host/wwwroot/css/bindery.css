@@ -465,6 +465,19 @@ abbr[title] {
 
 .button-primary small { color: rgba(255, 255, 255, 0.8); }
 
+/* Secondary actions read as stamped-but-unfilled: same weight of border, no ink block. */
+.button-secondary {
+    background: var(--surface-sunk);
+    border-color: var(--rule);
+    color: var(--ink-soft);
+}
+
+.button-secondary:hover,
+.button-secondary:focus-visible {
+    border-color: var(--rule-strong);
+    color: var(--ink);
+}
+
 .text-action {
     background: none;
     border: 0;

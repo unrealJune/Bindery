@@ -106,7 +106,7 @@
                     <form class="action-form"
                           method="post"
                           asp-page-handler="Run"
-                          hx-post="/Plugins?handler=Run"
+                          hx-post="@Url.Page("/Plugins", "Run")"
                           hx-target="#@panel"
                           hx-swap="innerHTML">
                         <input type="hidden" name="plugin" value="@descriptor.Name" />
