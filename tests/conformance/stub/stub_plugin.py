@@ -36,6 +36,10 @@ ARTIFACT_TTL_SECONDS = 15 * 60
 SUPPORTED = re.compile(r"^https?://stub\.invalid/works/(\d+)$", re.I)
 UPDATED_AT = "2026-08-01T00:00:00Z"
 
+# Which UI tier to present. The suite's --self-test runs the stub twice, once per tier, so
+# both sets of UI checks are exercised against something known-good.
+UI_MODE = (os.environ.get("BINDERY_STUB_UI_MODE") or "fragment").strip().lower()
+
 MANIFEST = {
     "protocolVersion": 1,
     "name": "stub",
@@ -195,6 +199,95 @@ UI_ROUTES = {
     "": fragment_home,
     "/search": fragment_search,
 }
+
+
+# ---------------------------------------------------------------- sandboxed UI
+#
+# The other tier, in about sixty lines. A sandboxed plugin serves a whole document and may
+# ship its own JavaScript, because the host gives it an opaque origin where that JavaScript
+# has nothing to abuse. Note what the script does *not* do: call fetch. `connect-src 'none'`
+# removes it, so talking to the host means the postMessage bridge — PLUGIN-UI.md §4.
+
+SANDBOXED_APP_JS = """\
+const pending = new Map();
+let seq = 0;
+
+function request(method, path, body) {
+  const id = String(++seq);
+  parent.postMessage({ bindery: 1, type: "request", id, method, path, body }, "*");
+  return new Promise((resolve, reject) => pending.set(id, { resolve, reject }));
+}
+
+window.addEventListener("message", (event) => {
+  const msg = event.data;
+  if (!msg || msg.bindery !== 1) return;
+  if (msg.type === "init") {
+    document.documentElement.setAttribute("data-theme", msg.theme || "auto");
+    document.getElementById("mount").textContent = "bridged to " + msg.plugin;
+    return;
+  }
+  const entry = msg.id && pending.get(msg.id);
+  if (!entry) return;
+  pending.delete(msg.id);
+  msg.type === "response" ? entry.resolve(msg) : entry.reject(new Error(msg.message));
+});
+
+new ResizeObserver(() => {
+  parent.postMessage(
+    { bindery: 1, type: "resize", height: document.documentElement.scrollHeight }, "*");
+}).observe(document.documentElement);
+
+parent.postMessage({ bindery: 1, type: "ready" }, "*");
+"""
+
+
+def sandboxed_document(title: str, body: str) -> str:
+    return (
+        '<!doctype html>\n<html lang="en">\n<head>\n'
+        '<meta charset="utf-8">\n'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
+        f'<title>{html.escape(title)}</title>\n'
+        '<link rel="stylesheet" href="/css/bindery.css">\n'
+        '</head>\n<body>\n'
+        f'{body}\n'
+        '<script src="app.js"></script>\n'
+        '</body>\n</html>\n'
+    )
+
+
+def sandboxed_home(base: str, query: dict) -> str:
+    return sandboxed_document(
+        "Conformance Stub",
+        '<main class="bnd-card"><h1>Conformance Stub</h1>'
+        '<p id="mount">connecting…</p></main>',
+    )
+
+
+def sandboxed_search(base: str, query: dict) -> str:
+    term = (query.get("q", [""])[0] or "").strip()
+    return sandboxed_document(
+        "Stub search",
+        '<main class="bnd-card"><h1>Search</h1>'
+        f"<p>You asked for {html.escape(term) or 'nothing'}.</p>"
+        '<p id="mount">connecting…</p></main>',
+    )
+
+
+SANDBOXED_ROUTES = {
+    "/": sandboxed_home,
+    "": sandboxed_home,
+    "/search": sandboxed_search,
+}
+
+if UI_MODE == "sandboxed":
+    MANIFEST["ui"] = {
+        "mode": "sandboxed",
+        "entry": "/",
+        "nav": [
+            {"label": "Stub", "path": "/", "icon": "book"},
+            {"label": "Stub search", "path": "/search", "icon": "search"},
+        ],
+    }
 
 
 # ---------------------------------------------------------------- HTTP
@@ -452,6 +545,21 @@ class Handler(BaseHTTPRequestHandler):
     def _ui(self, path: str, query: dict):
         base = self.headers.get("X-Bindery-Base") or "/plugins/stub/ui"
         route = path[len("/bindery/v1/ui"):] or "/"
+
+        if UI_MODE == "sandboxed":
+            if route == "/app.js":
+                return self._send(200, SANDBOXED_APP_JS.encode("utf-8"), "text/javascript",
+                                  extra={"Cache-Control": "no-store"})
+            renderer = SANDBOXED_ROUTES.get(route)
+            if renderer is None:
+                return self._send(
+                    404,
+                    sandboxed_document("Not found", '<main class="bnd-card"><p>No such page.</p></main>')
+                    .encode("utf-8"),
+                    "text/html")
+            return self._send(200, renderer(base.rstrip("/"), query).encode("utf-8"), "text/html",
+                              extra={"Cache-Control": "no-store"})
+
         renderer = UI_ROUTES.get(route)
         if renderer is None:
             return self._send(404, b'<div class="bnd-card"><p>No such page.</p></div>', "text/html")

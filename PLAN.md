@@ -178,44 +178,42 @@ plugin HTML.
 
 Every plugin gets this for free whether or not it also ships HTML.
 
-### Tier 2 — `fragment` (HTML passthrough) — **in v1**
+### Tier 2 — `sandboxed` (the plugin's own document) — **in v1**
 
-Real HTML, server-rendered by the plugin, swapped into the Bindery shell by htmx.
+A complete HTML document, served by the plugin into an iframe with an opaque origin.
 Full contract in [`docs/PLUGIN-UI.md`](docs/PLUGIN-UI.md).
 
-- Plugin serves `GET|POST /bindery/v1/ui/*` returning **HTML fragments** — not full pages.
-- Bindery reverse-proxies `/plugins/{name}/ui/{**rest}` to the plugin, forwarding method,
-  query, and body, and htmx swaps the response into the page. Bindery owns the chrome, nav,
-  and CSS; the fragment inherits it.
-- **No URL-rewriting magic.** Bindery sends `X-Bindery-Base: /plugins/fanficfare/ui` on
-  every proxied request and the plugin emits absolute URLs built from it. Rewriting
-  `hx-get`/`href`/`action` attributes server-side is the kind of clever that breaks at 2am.
-- Bindery publishes its CSS custom properties as documented design tokens so fragments look
-  native without shipping their own stylesheet.
+- Plugin serves `GET|POST /bindery/v1/ui/*` returning **full documents** plus its own
+  subresources (`app.js`, `style.css`). The proxy is a byte pipe with a content-type
+  allowlist and a size cap; it does not sanitize or rewrite anything.
+- Bindery loads it into `<iframe sandbox="allow-scripts allow-forms allow-popups
+  allow-downloads">` — note the absent `allow-same-origin`. That single omission is what
+  assigns the document an opaque origin.
+- **The plugin may ship whatever JavaScript it likes.** It cannot read Bindery's cookies,
+  DOM, or storage, and `connect-src 'none'` removes `fetch`/XHR/WebSocket entirely.
+- All host communication goes through a typed `postMessage` bridge: `request`/`response`
+  scoped to the plugin's own mount point, plus `resize`, `ready`, `notify`, `navigate`.
+  Bindery attaches the CSRF token; the plugin is never given it and so cannot leak it.
+- Bindery's stylesheet is public API, so a plugin can link `/css/bindery.css` and inherit
+  light/dark mode.
 
-**The load-bearing constraint: a `fragment` plugin ships no JavaScript.** Not inline, not
-`<script src>`, not `on*`, not `javascript:`. It doesn't need to — Bindery's htmx runtime is
-already in the shell and `hx-*` passes the sanitizer, so plugin HTML still gets async forms,
-polling, SSE progress, inline validation, and lazy loading. That is every plugin UI anyone
-actually builds. A plugin that truly needs its own JS uses Tier 3, and pays for it in
-isolation rather than smuggling the risk in.
+**Why this shape rather than sanitizing markup into Bindery's origin:** a fragment carries
+content *and* authority in one blob, and a sanitizer is the allowlist parser that tries to
+separate them — on every input, forever, without ever being wrong. Isolating instead means
+there is no authority in reach for injected script to abuse, so nothing has to be perfect.
+The security-critical surface becomes a ~100-line bridge with a five-item allowlist instead
+of a 14 KB HTML parser, and the browser enforces the boundary rather than a regex.
 
-**The security cost, stated plainly:** plugin HTML rendered in Bindery's origin is stored
-XSS by construction. Three layers, all required: a maintained allowlist sanitizer
-(`HtmlSanitizer`/AngleSharp — not hand-rolled), a strict CSP with no `unsafe-inline`, and
-antiforgery tokens injected on the wrapper via `hx-headers` so the plugin can't get CSRF
-wrong. Note the trust escalation: a downloader that returns EPUBs never touches your session
-cookie. HTML injected into your origin does. Same plugin, different threat.
+### Tier 3 — `fragment` (deprecated)
 
-### Tier 3 — `iframe` (escape hatch)
+HTML fragments swapped into the Bindery shell by htmx, sanitized on arrival. Still
+supported, still enforced — a `fragment` plugin ships no JavaScript, no CSS, and builds
+every URL from `X-Bindery-Base` — and the XSS conformance corpus remains a merge gate. The
+reference FanFicFare plugin still uses it.
 
-For a plugin that genuinely needs its own JavaScript. Served into a `sandbox="allow-forms"`
-iframe with **no** `allow-same-origin`, ideally on a distinct origin. Plugin ships whatever
-it likes; it simply cannot reach Bindery's DOM, cookies, or storage.
-
-The plugin opts in via the manifest, so Bindery knows to isolate rather than sanitize. Costs
-you: awkward auto-sizing, no htmx interop with the parent, and styling that won't match
-unless the plugin pulls Bindery's stylesheet.
+Deprecated because its safety rests on the sanitizer being perfect and `sandboxed` does not
+need anything to be perfect. Removing it would be a breaking change and a `protocolVersion`
+bump; that is a later decision, not a side effect of adding Tier 2.
 
 ### Build order
 

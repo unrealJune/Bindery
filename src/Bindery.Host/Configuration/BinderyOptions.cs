@@ -138,6 +138,16 @@ public sealed class PluginHostOptions
     /// <summary>Largest fragment the UI proxy will forward, in bytes.</summary>
     public int MaxFragmentBytes { get; set; } = 512 * 1024;
 
+    /// <summary>
+    /// Largest sandboxed UI response the proxy will forward, in bytes.
+    /// </summary>
+    /// <remarks>
+    /// Higher than <see cref="MaxFragmentBytes"/> because a sandboxed plugin serves its own
+    /// subresources through this path — scripts, stylesheets, fonts, images — not just a
+    /// snippet of markup.
+    /// </remarks>
+    public int MaxSandboxedBytes { get; set; } = 4 * 1024 * 1024;
+
     public TimeSpan FragmentTimeout { get; set; } = TimeSpan.FromSeconds(15);
 
     /// <summary>

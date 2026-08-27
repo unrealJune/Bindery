@@ -1741,6 +1741,26 @@ form > label {
 .plugin-surface { min-height: 12rem; }
 .plugin-loading { color: var(--ink-muted); font-family: var(--font-mono); font-size: 0.78rem; }
 
+/*
+    A sandboxed plugin's own document. The height is driven by the frame itself over the
+    postMessage bridge — there is no way to measure an opaque-origin document from out here,
+    which is the same isolation that makes the tier safe. Until the frame reports one, this
+    is what it gets.
+
+    Deliberately visible by default: a plugin that never sends `ready` (one with no bridge
+    at all, which is allowed) must still show its document rather than sit invisible.
+*/
+.plugin-surface-framed { display: flex; flex-direction: column; gap: 0.5rem; }
+.plugin-frame {
+    width: 100%;
+    min-height: 24rem;
+    border: 1px solid var(--rule, rgba(128, 128, 128, 0.25));
+    border-radius: var(--radius, 4px);
+    background: var(--surface, transparent);
+    display: block;
+}
+.plugin-status { color: var(--ink-muted); font-family: var(--font-mono); font-size: 0.78rem; min-height: 1rem; }
+
 /* ---------------------------------------------------------------- reader tokens */
 
 .token-reveal {

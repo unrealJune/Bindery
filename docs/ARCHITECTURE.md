@@ -105,9 +105,25 @@ Three tiers, declared by the manifest's `ui.mode`:
 
 - `declarative` — Bindery renders forms and actions from the manifest's schema. Every
   plugin gets this for nothing.
-- `fragment` — the plugin serves HTML, reverse-proxied at `/plugins/{name}/ui/*` and
-  swapped in by htmx. Shipping in v1.
-- `iframe` — sandboxed on a separate origin, specified but unbuilt.
+- `sandboxed` — the plugin serves a whole document into an opaque-origin iframe and may
+  ship its own JavaScript. Shipping in v1; the tier new plugins should use.
+- `fragment` — the plugin serves HTML, reverse-proxied at `/plugins/{name}/ui/*`, sanitized,
+  and swapped in by htmx. Deprecated, still supported.
+
+For `sandboxed`, the load-bearing details are:
+
+- **`<iframe sandbox="allow-scripts allow-forms allow-popups allow-downloads">` with no
+  `allow-same-origin`.** That omission assigns the document an opaque origin, which is what
+  denies it Bindery's cookies, DOM, storage, and API. It is the tier.
+- **The proxy does not sanitize.** `PluginUiProxy.ForwardDocumentAsync` is a byte pipe with
+  a content-type allowlist and a size cap. Script surviving intact is the point.
+- **`SecurityHeaders.BuildFrameContentSecurityPolicy`** replaces the page policy for that
+  response: `connect-src 'none'` (so the bridge is the only egress), `frame-ancestors 'self'`
+  (replacing the global `X-Frame-Options: DENY`), and `'unsafe-inline'` — which is harmless
+  in a context that holds no authority.
+- **`wwwroot/js/plugin-frame.js` is the security-critical surface.** It validates messages
+  by `event.source`, scopes every `request` to `/plugins/{name}/ui/`, normalizes with
+  `new URL` before checking the prefix, and attaches the CSRF token the frame never sees.
 
 For `fragment`, the load-bearing details are:
 
@@ -120,7 +136,8 @@ For `fragment`, the load-bearing details are:
   `hx-headers` on the container, and htmx inherits it. Plugins do nothing.
 - The proxy forwards `text/html` only, unbuffered so SSE works, size- and time-capped, and
   `no-store`. A plain browser GET is redirected to the plugin's page in the Bindery shell,
-  which fetches the same URL back with htmx.
+  which fetches the same URL back with htmx. A sandboxed plugin is never redirected — the
+  iframe's `src` is that URL.
 - Plugin UI requires a session. Feed tokens are OPDS-only.
 
 ## Configuration and deployment

@@ -140,6 +140,7 @@ public sealed class PluginActionService(
                 Microsoft.FSharp.Collections.FSharpList<Protocol.PluginAction>.Empty,
                 new Protocol.PluginUi(
                     Protocol.UiMode.Declarative,
+                    "/",
                     Microsoft.FSharp.Collections.FSharpList<Protocol.NavEntry>.Empty)),
             submitted!,
             new HashSet<string>());

@@ -41,6 +41,47 @@ public static class SecurityHeaders
     }
 
     /// <summary>
+    /// The policy applied to a sandboxed plugin's own document, replacing the host page's
+    /// for that response only.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>'unsafe-inline'</c> and <c>'unsafe-eval'</c> appear here and nowhere else, and
+    /// they carry none of their usual meaning: the document they apply to has an opaque
+    /// origin, so it cannot reach Bindery's cookies, DOM, storage, or API no matter what
+    /// script runs in it. Injecting script into a context that holds no authority achieves
+    /// nothing. This is the whole point of the tier — see <c>docs/PLUGIN-UI.md</c> §5.
+    /// </para>
+    /// <para>
+    /// <c>connect-src 'none'</c> is the load-bearing line. It removes <c>fetch</c>,
+    /// <c>XMLHttpRequest</c>, <c>EventSource</c>, WebSocket, and <c>sendBeacon</c>, which is
+    /// what makes the postMessage bridge the <em>only</em> way out of the frame rather than
+    /// merely the recommended one. A compromised plugin cannot phone home.
+    /// </para>
+    /// <para>
+    /// <paramref name="origin"/> is Bindery's own origin, named explicitly because
+    /// <c>'self'</c> matches nothing from an opaque origin. It is what lets the plugin load
+    /// its own subresources back through the proxy.
+    /// </para>
+    /// </remarks>
+    public static string BuildFrameContentSecurityPolicy(string origin) =>
+        string.Join("; ",
+            "default-src 'none'",
+            $"script-src 'unsafe-inline' 'unsafe-eval' {origin}",
+            $"style-src 'unsafe-inline' {origin}",
+            $"img-src data: blob: {origin}",
+            $"font-src data: {origin}",
+            $"media-src data: blob: {origin}",
+            "connect-src 'none'",
+            "form-action 'none'",
+            // Replaces the global X-Frame-Options: DENY, which would otherwise stop Bindery
+            // framing its own plugin. Only Bindery may embed it.
+            "frame-ancestors 'self'",
+            "base-uri 'none'",
+            "object-src 'none'",
+            "frame-src 'none'");
+
+    /// <summary>
     /// Assembles the policy. Everything except <c>form-action</c> is fixed; see
     /// <see cref="BuildFormAction"/> for why that one has to be deployment-aware.
     /// </summary>

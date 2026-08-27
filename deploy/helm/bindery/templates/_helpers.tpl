@@ -54,3 +54,15 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- define "bindery.pluginServiceName" -}}
 {{- printf "%s-plugin-%s" (include "bindery.fullname" .root) .plugin.name | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
+
+{{/*
+The claim backing a plugin's /work.
+
+Most plugins want nothing here: /work is scratch for in-flight artifacts and an emptyDir is
+correct. A plugin that keeps durable state — hedgerow keeps ingested chapters and their
+source attribution in SQLite — must set `persistence.enabled`, or a pod restart silently
+throws that state away.
+*/}}
+{{- define "bindery.pluginWorkClaimName" -}}
+{{- default (printf "%s-plugin-%s-work" (include "bindery.fullname" .root) .plugin.name | trunc 63 | trimSuffix "-") (default dict .plugin.persistence).existingClaim -}}
+{{- end -}}

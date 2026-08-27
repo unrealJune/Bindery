@@ -11,6 +11,20 @@ namespace Bindery.Host.Plugins;
 public sealed record ProxiedFragment(int StatusCode, string Html, IReadOnlyList<string> Removed);
 
 /// <summary>
+/// A sandboxed plugin's own bytes, forwarded verbatim.
+/// </summary>
+/// <param name="Failure">
+/// A human-readable reason the plugin's response was refused, or <c>null</c> when
+/// <paramref name="Body"/> is the plugin's own. The frame renders it rather than the host
+/// chrome, because the failure belongs to the plugin's panel.
+/// </param>
+public sealed record ProxiedDocument(
+    int StatusCode,
+    string ContentType,
+    byte[] Body,
+    string? Failure = null);
+
+/// <summary>
 /// The reverse proxy behind <c>/plugins/{name}/ui/{**rest}</c>.
 /// </summary>
 /// <remarks>
@@ -36,6 +50,32 @@ public sealed class PluginUiProxy(
 {
     private static readonly string[] ForwardedRequestHeaders = ["Accept-Language"];
 
+    /// <summary>
+    /// What a sandboxed plugin is allowed to answer with.
+    /// </summary>
+    /// <remarks>
+    /// Wider than the fragment tier's <c>text/html</c> because a sandboxed plugin serves its
+    /// own scripts, styles, and images through this path. It is still an allowlist: a
+    /// content type nobody named is refused rather than forwarded, so the proxy cannot be
+    /// talked into becoming a general-purpose open relay for arbitrary bytes.
+    /// </remarks>
+    private static readonly HashSet<string> SandboxedContentTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "text/html",
+        "text/css",
+        "text/javascript",
+        "application/javascript",
+        "application/json",
+        "text/plain",
+        "image/svg+xml",
+        "text/event-stream"
+    };
+
+    private static bool IsAllowedSandboxedType(string mediaType) =>
+        SandboxedContentTypes.Contains(mediaType)
+        || mediaType.StartsWith("image/", StringComparison.OrdinalIgnoreCase)
+        || mediaType.StartsWith("font/", StringComparison.OrdinalIgnoreCase);
+
     private readonly PluginHostOptions _options = options.Value.Plugins;
 
     public string BasePathFor(string plugin) => $"/plugins/{plugin}/ui";
@@ -56,6 +96,124 @@ public sealed class PluginUiProxy(
         }
 
         var basePath = BasePathFor(descriptor.Name);
+
+        return await SendAsync(
+            descriptor,
+            request,
+            rest,
+            csrfToken,
+            async (response, token) =>
+            {
+                var mediaType = response.Content.Headers.ContentType?.MediaType ?? string.Empty;
+
+                // text/html only. Anything else is rejected rather than forwarded: a proxy
+                // that will pass through whatever a plugin sets is an open redirect and a
+                // content sniffing problem wearing a helpful face.
+                if (!mediaType.Equals("text/html", StringComparison.OrdinalIgnoreCase)
+                    && !mediaType.Equals("text/event-stream", StringComparison.OrdinalIgnoreCase))
+                {
+                    logger.LogWarning(
+                        "plugin {Plugin} answered a UI request with '{ContentType}'", descriptor.Name, mediaType);
+
+                    return new ProxiedFragment(
+                        (int)HttpStatusCode.BadGateway,
+                        Notice($"{descriptor.DisplayName} returned something that is not HTML."),
+                        []);
+                }
+
+                var body = await ReadCappedAsync(response, _options.MaxFragmentBytes, token);
+                var clean = sanitizer.Sanitize(Encoding.UTF8.GetString(body), descriptor.Name, basePath);
+
+                return new ProxiedFragment((int)response.StatusCode, clean.Html, clean.Removed);
+            },
+            failure => new ProxiedFragment((int)HttpStatusCode.BadGateway, Notice(failure), []),
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Forwards a sandboxed plugin's response verbatim.
+    /// </summary>
+    /// <remarks>
+    /// No sanitizer runs here, and that is the point of the tier rather than an oversight.
+    /// These bytes are handed to an iframe with no <c>allow-same-origin</c>, so the document
+    /// they build has an opaque origin: no cookie, no parent DOM, no storage, and — via
+    /// <c>connect-src 'none'</c> — no network. There is no authority in reach for injected
+    /// script to abuse, so there is nothing for a sanitizer to protect. What the host still
+    /// enforces is the content-type allowlist and the size cap.
+    /// </remarks>
+    public async Task<ProxiedDocument> ForwardDocumentAsync(
+        PluginDescriptor descriptor,
+        HttpRequest request,
+        string rest,
+        string csrfToken,
+        CancellationToken cancellationToken)
+    {
+        if (descriptor.Manifest is null || !descriptor.Manifest.Ui.Mode.RunsInFrame)
+        {
+            return Refused(HttpStatusCode.NotFound, $"{descriptor.DisplayName} does not provide its own interface.");
+        }
+
+        return await SendAsync(
+            descriptor,
+            request,
+            rest,
+            csrfToken,
+            async (response, token) =>
+            {
+                var mediaType = response.Content.Headers.ContentType?.MediaType ?? string.Empty;
+
+                if (!IsAllowedSandboxedType(mediaType))
+                {
+                    logger.LogWarning(
+                        "plugin {Plugin} answered a sandboxed UI request with '{ContentType}'",
+                        descriptor.Name,
+                        mediaType);
+
+                    return Refused(
+                        HttpStatusCode.BadGateway,
+                        $"{descriptor.DisplayName} returned an unsupported content type.");
+                }
+
+                var body = await ReadCappedAsync(response, _options.MaxSandboxedBytes, token);
+                var charset = response.Content.Headers.ContentType?.CharSet;
+
+                var contentType = string.IsNullOrWhiteSpace(charset)
+                    ? mediaType
+                    : $"{mediaType}; charset={charset}";
+
+                return new ProxiedDocument((int)response.StatusCode, contentType, body);
+            },
+            failure => Refused(HttpStatusCode.BadGateway, failure),
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// A refusal rendered as a minimal document, so the plugin's own panel shows the
+    /// problem instead of the host chrome having to know about it.
+    /// </summary>
+    private static ProxiedDocument Refused(HttpStatusCode status, string message) =>
+        new(
+            (int)status,
+            "text/html; charset=utf-8",
+            Encoding.UTF8.GetBytes(
+                "<!doctype html><html><head><meta charset=\"utf-8\">"
+                + "<link rel=\"stylesheet\" href=\"/css/bindery.css\"></head>"
+                + $"<body><div class=\"bnd-card bnd-notice\"><p>{WebUtility.HtmlEncode(message)}</p></div></body></html>"),
+            message);
+
+    /// <summary>
+    /// The request half both tiers share: build it, send it, and turn a plugin that is not
+    /// answering into a value rather than an exception.
+    /// </summary>
+    private async Task<T> SendAsync<T>(
+        PluginDescriptor descriptor,
+        HttpRequest request,
+        string rest,
+        string csrfToken,
+        Func<HttpResponseMessage, CancellationToken, Task<T>> onResponse,
+        Func<string, T> onFailure,
+        CancellationToken cancellationToken)
+    {
         var target = "/bindery/v1/ui/" + rest.TrimStart('/');
 
         if (request.QueryString.HasValue)
@@ -66,7 +224,7 @@ public sealed class PluginUiProxy(
         using var httpClient = client.CreateClient(descriptor.Entry, PluginClient.StreamClient);
         using var upstream = new HttpRequestMessage(new HttpMethod(request.Method), target);
 
-        upstream.Headers.Add("X-Bindery-Base", basePath);
+        upstream.Headers.Add("X-Bindery-Base", BasePathFor(descriptor.Name));
         upstream.Headers.Add("X-Bindery-Csrf", csrfToken);
 
         foreach (var header in ForwardedRequestHeaders)
@@ -107,35 +265,12 @@ public sealed class PluginUiProxy(
         {
             logger.LogWarning(ex, "plugin {Plugin} did not answer a UI request for {Path}", descriptor.Name, rest);
 
-            return new ProxiedFragment(
-                (int)HttpStatusCode.BadGateway,
-                Notice($"{descriptor.DisplayName} is not responding."),
-                []);
+            return onFailure($"{descriptor.DisplayName} is not responding.");
         }
 
         using (response)
         {
-            var mediaType = response.Content.Headers.ContentType?.MediaType ?? string.Empty;
-
-            // text/html only. Anything else is rejected rather than forwarded: a proxy that
-            // will pass through whatever a plugin sets is an open redirect and a content
-            // sniffing problem wearing a helpful face.
-            if (!mediaType.Equals("text/html", StringComparison.OrdinalIgnoreCase)
-                && !mediaType.Equals("text/event-stream", StringComparison.OrdinalIgnoreCase))
-            {
-                logger.LogWarning(
-                    "plugin {Plugin} answered a UI request with '{ContentType}'", descriptor.Name, mediaType);
-
-                return new ProxiedFragment(
-                    (int)HttpStatusCode.BadGateway,
-                    Notice($"{descriptor.DisplayName} returned something that is not HTML."),
-                    []);
-            }
-
-            var body = await ReadCappedAsync(response, timeout.Token);
-            var clean = sanitizer.Sanitize(body, descriptor.Name, basePath);
-
-            return new ProxiedFragment((int)response.StatusCode, clean.Html, clean.Removed);
+            return await onResponse(response, timeout.Token);
         }
     }
 
@@ -169,12 +304,11 @@ public sealed class PluginUiProxy(
     public static string Notice(string message) =>
         $"<div class=\"bnd-card bnd-notice\"><p>{WebUtility.HtmlEncode(message)}</p></div>";
 
-    private async Task<string> ReadCappedAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    private async Task<byte[]> ReadCappedAsync(HttpResponseMessage response, int cap, CancellationToken cancellationToken)
     {
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
         using var buffer = new MemoryStream();
         var chunk = new byte[16 * 1024];
-        var cap = _options.MaxFragmentBytes;
 
         while (true)
         {
@@ -195,7 +329,7 @@ public sealed class PluginUiProxy(
             buffer.Write(chunk, 0, read);
         }
 
-        return Encoding.UTF8.GetString(buffer.ToArray());
+        return buffer.ToArray();
     }
 
     private static bool HasBody(HttpRequest request) =>
@@ -211,15 +345,24 @@ public sealed class PluginUiProxy(
         }
 
         var basePath = BasePathFor(descriptor.Name);
+        var framed = descriptor.Manifest.Ui.Mode.RunsInFrame;
 
         return
         [
             .. descriptor.Manifest.Ui.Nav.AsList().Select(entry => new PluginNavEntry(
                 descriptor.Name,
                 entry.Label,
-                basePath + entry.Path,
+                // A sandboxed plugin's screens are linked through its desk page, never
+                // straight at the document. The raw URL is the iframe's `src`: opened at the
+                // top level it has no parent, so the bridge never hands it an `init` and the
+                // plugin sits there loading forever. A fragment plugin has no such problem —
+                // its markup is the page.
+                framed
+                    ? $"/plugins/{Uri.EscapeDataString(descriptor.Name)}?path={Uri.EscapeDataString(entry.Path)}"
+                    : basePath + entry.Path,
                 entry.Icon.OrNull(),
-                entry.Section.OrNull()))
+                entry.Section.OrNull(),
+                entry.Path))
         ];
     }
 
@@ -228,7 +371,13 @@ public sealed class PluginUiProxy(
         [.. registry.Usable.SelectMany(NavigationFor)];
 }
 
-public sealed record PluginNavEntry(string Plugin, string Label, string Href, string? Icon, string? Section);
+public sealed record PluginNavEntry(
+    string Plugin,
+    string Label,
+    string Href,
+    string? Icon,
+    string? Section,
+    string Path);
 
 public static class PluginUiEndpoints
 {
@@ -237,7 +386,7 @@ public static class PluginUiEndpoints
     public static IEndpointRouteBuilder MapPluginUi(this IEndpointRouteBuilder builder)
     {
         builder.MapMethods("/plugins/{name}/ui/{**rest}", Methods, ForwardAsync)
-            .RequireAuthorization(AuthPolicies.UseUi);
+            .RequireAuthorization(AuthPolicies.UseFrame);
 
         return builder;
     }
@@ -258,11 +407,25 @@ public static class PluginUiEndpoints
             return Results.NotFound();
         }
 
+        var sandboxed = descriptor.Manifest?.Ui.Mode.RunsInFrame == true;
+
         // A browser navigating straight here — a bookmark, a reload, a nav link — wants a
         // page, not the inside of a div. Send it to the shell, which fetches this same URL
         // back with htmx.
+        //
+        // For a sandboxed plugin this URL is the iframe's `src`, so the redirect must fire
+        // for a top-level navigation and *not* for the frame loading itself — otherwise the
+        // frame bounces to the page that contains it. `Sec-Fetch-Dest` is exactly that
+        // distinction: `document` for the address bar, `iframe` for the frame. A browser too
+        // old to send it falls through to serving the document, which is the safer miss.
+        var topLevel = string.Equals(
+            context.Request.Headers["Sec-Fetch-Dest"].ToString(),
+            "document",
+            StringComparison.OrdinalIgnoreCase);
+
         if (HttpMethods.IsGet(context.Request.Method)
-            && !context.Request.Headers.ContainsKey("HX-Request"))
+            && !context.Request.Headers.ContainsKey("HX-Request")
+            && (!sandboxed || topLevel))
         {
             var path = "/" + (rest ?? string.Empty).TrimStart('/');
             return Results.LocalRedirect($"/plugins/{Uri.EscapeDataString(name)}?path={Uri.EscapeDataString(path)}");
@@ -278,15 +441,45 @@ public static class PluginUiEndpoints
         var requestToken = tokens.RequestToken
             ?? throw new InvalidOperationException("antiforgery did not issue a request token");
 
+        context.Response.Headers.CacheControl = "no-store";
+        context.Response.Headers.Pragma = "no-cache";
+
+        if (sandboxed)
+        {
+            var document = await proxy.ForwardDocumentAsync(
+                descriptor,
+                context.Request,
+                rest ?? string.Empty,
+                requestToken,
+                cancellationToken);
+
+            var origin = $"{context.Request.Scheme}://{context.Request.Host}";
+
+            // Replaces the host page's policy for this response only. The frame gets to run
+            // its own script; it just has nothing to run it against.
+            context.Response.Headers["Content-Security-Policy"] =
+                SecurityHeaders.BuildFrameContentSecurityPolicy(origin);
+
+            // The global header is DENY, which would stop Bindery framing its own plugin.
+            // frame-ancestors 'self' in the policy above is the replacement, and it is the
+            // one modern browsers honour.
+            context.Response.Headers.Remove("X-Frame-Options");
+
+            // Results.Bytes has no status-code overload, and the status matters: a plugin's
+            // own 404 or 500 must reach the frame rather than being flattened to 200.
+            context.Response.StatusCode = document.StatusCode;
+            context.Response.ContentType = document.ContentType;
+            await context.Response.Body.WriteAsync(document.Body, cancellationToken);
+
+            return Results.Empty;
+        }
+
         var fragment = await proxy.ForwardAsync(
             descriptor,
             context.Request,
             rest ?? string.Empty,
             requestToken,
             cancellationToken);
-
-        context.Response.Headers.CacheControl = "no-store";
-        context.Response.Headers.Pragma = "no-cache";
 
         return Results.Content(
             PluginUiProxy.Wrap(descriptor.Name, fragment.Html, requestToken),

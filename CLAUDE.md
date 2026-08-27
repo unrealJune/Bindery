@@ -100,15 +100,40 @@ Three tiers, declared by the plugin's manifest (`ui.mode`) — see `PLAN.md` §5
 
 - `declarative` — Bindery renders forms and actions from the manifest schema. Plugin ships
   no HTML. Every plugin gets this for free.
-- `fragment` — plugin serves HTML fragments, reverse-proxied at `/plugins/{name}/ui/*` and
-  swapped in by htmx. **Shipping in v1.**
-- `iframe` — sandboxed, no `allow-same-origin`. Specified, unbuilt.
+- `sandboxed` — plugin serves a complete document into an iframe with an opaque origin.
+  **Shipping in v1. This is the tier new plugins should use.**
+- `fragment` — plugin serves HTML fragments, reverse-proxied and sanitized into Bindery's
+  own origin. **Deprecated but fully supported**; the reference FanFicFare plugin uses it.
 
-Non-negotiables for `fragment`, in rough order of how badly they break things:
+### `sandboxed` — plugin JavaScript is allowed, and that is the point
+
+The isolation is what buys it, so do not erode the isolation:
+
+1. **Never add `allow-same-origin` to the iframe.** That one token is the entire tier. With
+   it, the plugin's document shares Bindery's origin and every guarantee here evaporates —
+   it becomes a same-origin XSS surface with a friendlier name. There is a test asserting
+   its absence; if it ever fails, treat it as a security incident, not a broken test.
+2. **The proxy does not sanitize in this mode, deliberately.** Do not "helpfully" run
+   fragments' sanitizer over a sandboxed document. Script surviving intact is the feature.
+3. **`connect-src 'none'` is load-bearing.** It is what makes the postMessage bridge the
+   *only* egress rather than the recommended one. Do not relax it to let a plugin call
+   `fetch`; that is a request to reintroduce ambient authority.
+4. **The bridge is now the security-critical surface** (`wwwroot/js/plugin-frame.js`). Keep
+   it small, non-parsing, and allowlist-driven. Every `request` path is validated to sit
+   under that plugin's own `/plugins/{name}/ui/` mount, normalized with `new URL` *before*
+   the prefix check. Inbound messages are identified by `event.source`, never by
+   `event.origin` — an opaque origin is the string `"null"` and several frames would all
+   claim it.
+5. **The CSRF token stays in the parent.** The frame is never given it, so a plugin cannot
+   leak it and cannot get CSRF wrong.
+
+### `fragment` — unchanged, still enforced
+
+Everything that was true of this tier is still true, in roughly the order it breaks things:
 
 1. **A fragment plugin ships no JavaScript.** No inline, no `<script src>`, no `on*`, no
    `javascript:`. It uses Bindery's htmx (`hx-*` passes the sanitizer) for interactivity.
-   If a plugin needs its own JS, the answer is `iframe` — never a loosened allowlist.
+   If a plugin needs its own JS, the answer is `sandboxed` — never a loosened allowlist.
 2. **The sanitizer is security-critical.** Use the maintained `HtmlSanitizer` library. Do
    not hand-roll it, do not disable it "temporarily," do not add an allowlist entry without
    a test. The XSS vector suite in `tests/conformance/` is a merge gate.

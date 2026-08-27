@@ -85,6 +85,8 @@ def main(argv=None) -> int:
     parser.add_argument("--no-color", action="store_true")
     parser.add_argument("--self-test", action="store_true",
                         help="start the bundled stub plugin and run the suite against it")
+    parser.add_argument("--stub-ui-mode", default="fragment", choices=["fragment", "sandboxed"],
+                        help="UI tier the self-test stub presents (default fragment)")
     args = parser.parse_args(argv)
 
     if args.list:
@@ -102,7 +104,8 @@ def main(argv=None) -> int:
         args.token = args.token or "conformance-self-test"
         args.download_url = args.download_url or "https://stub.invalid/works/1"
         args.action_input = args.action_input or {"echo": {"text": "hello"}}
-        env = dict(os.environ, BINDERY_PLUGIN_TOKEN=args.token, BINDERY_PLUGIN_PORT=str(port))
+        env = dict(os.environ, BINDERY_PLUGIN_TOKEN=args.token, BINDERY_PLUGIN_PORT=str(port),
+                   BINDERY_STUB_UI_MODE=args.stub_ui_mode)
         stub = subprocess.Popen([sys.executable, STUB], env=env,
                                 stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
         if not wait_for_health(args.base_url):

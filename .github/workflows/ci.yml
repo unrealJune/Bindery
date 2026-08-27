@@ -28,6 +28,12 @@ jobs:
       - name: Plugin conformance self-test
         run: python tests/conformance/run.py --self-test --no-color
 
+      # The stub presents one UI tier per run, and the two tiers are checked for opposite
+      # things — `fragment` for shipping no JavaScript, `sandboxed` for not depending on
+      # egress its CSP removes. Running only one would leave half the UI checks unexercised.
+      - name: Plugin conformance self-test (sandboxed UI tier)
+        run: python tests/conformance/run.py --self-test --stub-ui-mode sandboxed --no-color
+
   # The gate that makes dependency bumps meaningful.
   #
   # `build-test` above never installs Python and never sees FanFicFare, so on its own it
@@ -114,6 +120,89 @@ jobs:
             --base-url http://localhost:8080 \
             --token "$BINDERY_PLUGIN_TOKEN" \
             --no-color $extra
+
+      - name: Plugin logs
+        if: always()
+        run: docker logs plugin || true
+
+      - name: Stop plugin
+        if: always()
+        run: docker rm -f plugin || true
+
+  # The same gate for Hedgerow, which is a separate job rather than a matrix leg because
+  # the two plugins are exercised differently: FanFicFare ships offline test adapters that
+  # make a real end-to-end download cheap, and Hedgerow has no equivalent — its sources are
+  # a live site and a Discord gateway, neither of which belongs in CI.
+  #
+  # What this does prove is the part that is easy to break: that the image builds with
+  # FanFicFare and discord.py resolved, that the plugin starts with **no configuration at
+  # all** (no bot token, no channels), and that its sandboxed UI conforms — including that
+  # it never reaches for fetch/XHR, which the frame's `connect-src 'none'` would block at
+  # runtime in a way no unit test would catch.
+  hedgerow-conformance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      BINDERY_PLUGIN_TOKEN: conformance-ci
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build plugin image
+        uses: docker/build-push-action@v6
+        with:
+          context: plugins/hedgerow
+          file: plugins/hedgerow/Dockerfile
+          push: false
+          load: true
+          tags: bindery-plugin-hedgerow:ci
+          cache-from: type=gha,scope=hedgerow
+          cache-to: type=gha,scope=hedgerow,mode=max
+
+      # Unlike FanFicFare's, this plugin keeps durable state — ingested chapters, source
+      # attribution, manual ordering — so /work is a real volume rather than a tmpfs of
+      # scratch. Still unprivileged with a read-only root.
+      - name: Start plugin
+        run: |
+          docker run -d --name plugin \
+            -p 8080:8080 \
+            -e BINDERY_PLUGIN_TOKEN="$BINDERY_PLUGIN_TOKEN" \
+            --read-only \
+            --tmpfs /tmp:rw,size=64m \
+            --mount type=tmpfs,destination=/work,tmpfs-size=256m \
+            bindery-plugin-hedgerow:ci
+
+      - name: Wait for health
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:8080/healthz >/dev/null 2>&1; then
+              echo "healthy after ${i}s"; exit 0
+            fi
+            sleep 1
+          done
+          echo "plugin never became healthy"; exit 1
+
+      # discord.py imports `audioop`, which PEP 594 removed in Python 3.13. The image pins
+      # 3.12, so this is the check that catches a base-image bump breaking the bot.
+      - name: Verify dependencies resolve in the image
+        run: |
+          docker exec plugin python -c "import fanficfare; print('fanficfare', fanficfare.__file__)"
+          docker exec plugin python -c "import discord; print('discord.py', discord.__version__)"
+
+      # Starting with no bot token must leave the plugin healthy and Royal-Road-only, never
+      # crash-looping. A plugin that requires configuration to pass a liveness probe cannot
+      # be deployed before it is configured.
+      - name: Verify it starts unconfigured
+        run: |
+          curl -fsS http://localhost:8080/healthz | tee /dev/stderr | grep -q '"status":"ok"'
+
+      - name: Conformance suite
+        run: |
+          python tests/conformance/run.py \
+            --base-url http://localhost:8080 \
+            --token "$BINDERY_PLUGIN_TOKEN" \
+            --no-color
 
       - name: Plugin logs
         if: always()

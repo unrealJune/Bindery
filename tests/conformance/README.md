@@ -22,11 +22,23 @@ Exit code is `0` when every check passed and `1` otherwise, so it drops straight
 | `--action-input ACTION:KEY=VALUE` | Input for a declared action, repeatable. Unlocks `actions.invoke`. |
 | `--download-timeout SECONDS` | Default 300. Real fetches of long works need more. |
 | `--only NAME_OR_GROUP` | Run one check or one group (`health`, `manifest`, `probe`, `download`, `artifacts`, `jobs`, `actions`, `ui`). |
+| `--stub-ui-mode MODE` | With `--self-test`, which UI tier the stub presents: `fragment` (default) or `sandboxed`. |
 | `--list` | Print every check and what it asserts. |
 
 Checks that do not apply are skipped, not failed: probe checks need
-`capabilities.probe`, UI checks need `ui.mode` of `fragment` or `iframe`, artifact checks
+`capabilities.probe`, UI checks need a `ui.mode` that serves HTML, artifact checks
 need a successful real download.
+
+The two UI tiers are checked for opposite things. `sandboxed` plugins are checked for
+serving whole documents and for *not* depending on egress the frame's CSP removes; they may
+ship all the JavaScript they like. `fragment` plugins are checked for shipping none.
+
+Self-testing both tiers:
+
+```bash
+python tests/conformance/run.py --self-test
+python tests/conformance/run.py --self-test --stub-ui-mode sandboxed
+```
 
 ## Layout
 
@@ -34,9 +46,9 @@ need a successful real download.
 run.py               entry point, argument parsing, self-test bootstrap
 harness.py           HTTP client, NDJSON reader, check registry, runner
 checks_protocol.py   sections 2-5, 7-9 of docs/PLUGIN-PROTOCOL.md
-checks_ui.py         docs/PLUGIN-UI.md — fragments, no-JS, X-Bindery-Base, reflection
+checks_ui.py         docs/PLUGIN-UI.md — both UI tiers
 vectors/xss.json     shared XSS corpus (also read by the host's sanitizer tests)
-stub/stub_plugin.py  a complete, correct plugin in ~450 stdlib lines
+stub/stub_plugin.py  a complete, correct plugin in ~450 stdlib lines, in either UI tier
 ```
 
 ## The stub

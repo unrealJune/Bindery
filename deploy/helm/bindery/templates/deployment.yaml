@@ -130,7 +130,12 @@ spec:
         {{- range $plugin := .Values.plugins }}
         {{- if and $plugin.enabled (eq $plugin.mode "sidecar") }}
         - name: plugin-work-{{ $plugin.name | trunc 50 | trimSuffix "-" }}
+          {{- if (default dict $plugin.persistence).enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "bindery.pluginWorkClaimName" (dict "root" $ "plugin" $plugin) }}
+          {{- else }}
           emptyDir: {}
+          {{- end }}
         - name: plugin-tmp-{{ $plugin.name | trunc 50 | trimSuffix "-" }}
           emptyDir: {}
         {{- end }}

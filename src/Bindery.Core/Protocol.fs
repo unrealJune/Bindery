@@ -72,22 +72,33 @@ type ConfigField =
 type UiMode =
     | Declarative
     | Fragment
-    | Iframe
+    | Sandboxed
 
     member this.Wire =
         match this with
         | Declarative -> "declarative"
         | Fragment -> "fragment"
-        | Iframe -> "iframe"
+        | Sandboxed -> "sandboxed"
 
-    /// Whether the host must reverse-proxy and sanitize HTML for this plugin.
+    /// Whether the host must reverse-proxy HTML for this plugin at all.
     member this.ServesHtml = this <> Declarative
+
+    /// Whether what comes back is inlined into Bindery's own origin, and so must be
+    /// sanitized. False for `Sandboxed`, where the document is handed to an opaque-origin
+    /// iframe and holds no authority worth stripping.
+    member this.RequiresSanitizing = this = Fragment
+
+    /// Whether the host loads the plugin's document into a sandboxed frame.
+    member this.RunsInFrame = this = Sandboxed
 
 module UiMode =
     let ofWire (value: string) =
         match value.Trim().ToLowerInvariant() with
         | "fragment" -> Some Fragment
-        | "iframe" -> Some Iframe
+        | "sandboxed" -> Some Sandboxed
+        // The tier was specified as `iframe` before it was built. Accepting the old name
+        // costs one line and keeps any manifest written against the earlier spec working.
+        | "iframe" -> Some Sandboxed
         | "declarative" -> Some Declarative
         | _ -> None
 
@@ -97,7 +108,10 @@ type NavEntry =
       Icon: string option
       Section: string option }
 
-type PluginUi = { Mode: UiMode; Nav: NavEntry list }
+type PluginUi =
+    { Mode: UiMode
+      Entry: string
+      Nav: NavEntry list }
 
 type Capabilities =
     { Probe: bool
@@ -376,16 +390,27 @@ module private Parse =
               Cover = Json.boolOr false "cover" caps
               Cancel = Json.boolOr true "cancel" caps }
 
+    /// A UI path is only accepted if it is rooted and cannot climb out of the plugin's
+    /// mount point. A bad one is dropped rather than corrected.
+    let private uiPath (value: string) =
+        if value.StartsWith "/"
+           && not (value.StartsWith "//")
+           && not (value.Contains "..")
+           && not (value.Contains "\\")
+        then Some value
+        else None
+
     let ui (element: JsonElement) =
         match Json.tryProp "ui" element with
-        | None -> { Mode = Declarative; Nav = [] }
+        | None -> { Mode = Declarative; Entry = "/"; Nav = [] }
         | Some ui ->
             { Mode = Json.tryText "mode" ui |> Option.bind UiMode.ofWire |> Option.defaultValue Declarative
+              Entry = Json.tryText "entry" ui |> Option.bind uiPath |> Option.defaultValue "/"
               Nav =
                 Json.items "nav" ui
                 |> List.choose (fun entry ->
                     match Json.tryText "label" entry, Json.tryText "path" entry with
-                    | Some label, Some path when path.StartsWith "/" && not (path.Contains "..") ->
+                    | Some label, Some path when (uiPath path).IsSome ->
                         Some
                             { Label = label
                               Path = path

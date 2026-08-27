@@ -50,15 +50,18 @@ plugins:
 
 ## Plugins can bring their own UI
 
-A plugin isn't limited to returning files — it can contribute real, server-rendered HTML to
-the Bindery interface. Bindery reverse-proxies the plugin's fragments and htmx swaps them
-into the page, so a plugin's screens sit inside Bindery's chrome and inherit its styling.
+A plugin isn't limited to returning files — it can contribute a real interface to Bindery,
+with its own JavaScript, CSS, and interactions.
 
-The rule that makes it safe: **a plugin ships no JavaScript.** It uses Bindery's htmx
-runtime for interactivity — async forms, polling, SSE progress, lazy loading — which covers
-essentially everything, while keeping the sanitizer's job small enough to be exhaustively
-tested. Plugins that genuinely need their own JS declare `mode: "iframe"` and get sandboxed
-on a separate origin instead.
+The rule that makes it safe isn't a filter, it's a boundary: **a plugin's interface runs in
+an iframe with an opaque origin**, sandboxed without `allow-same-origin`. It cannot read
+your session cookie, reach Bindery's DOM, or call Bindery's API, and `connect-src 'none'`
+means it has no network of its own either. Everything it needs from the host crosses one
+small, typed `postMessage` bridge that scopes every request to the plugin's own mount point
+and attaches the CSRF token on the plugin's behalf.
+
+So a plugin can ship a drag-and-drop editor if it wants to, and the browser — not a
+sanitizer — is what keeps it away from your library.
 
 Full contract: [`docs/PLUGIN-UI.md`](docs/PLUGIN-UI.md).
 

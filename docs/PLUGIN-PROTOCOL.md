@@ -80,7 +80,7 @@ The mechanism does not change between `mode: sidecar` (localhost) and `mode: ser
 | `GET` | `/bindery/v1/artifacts/{jobId}/{artifactId}` | yes |
 | `DELETE` | `/bindery/v1/jobs/{jobId}` | yes |
 | `POST` | `/bindery/v1/actions/{action}` | no — see `actions` (§5) |
-| `GET`/`POST` | `/bindery/v1/ui/{*path}` | no — only for `ui.mode` `fragment` or `iframe` (§6) |
+| `GET`/`POST` | `/bindery/v1/ui/{*path}` | no — only for `ui.mode` `sandboxed` or `fragment` (§6) |
 
 ### 3.1 `GET /healthz`
 
@@ -421,21 +421,45 @@ Anything longer belongs in `download`.
 
 ## 6. UI endpoints
 
-Only for `ui.mode` of `fragment` or `iframe`. The full contract, including the sanitizer
-allowlist and the reasoning behind the no-JavaScript rule, is
-[`PLUGIN-UI.md`](PLUGIN-UI.md). In protocol terms:
+Only for `ui.mode` of `sandboxed` or `fragment`. The full contract — the bridge message
+types, the frame's CSP, and the reasoning behind both — is [`PLUGIN-UI.md`](PLUGIN-UI.md).
+In protocol terms:
 
 - The plugin serves `GET`/`POST` under `/bindery/v1/ui/`.
 - Bindery reverse-proxies `/plugins/{name}/ui/{**rest}` to `/bindery/v1/ui/{**rest}`,
   forwarding method, query string, and body.
-- Responses **MUST** be `text/html` (or `text/event-stream` for SSE). Any other content type
-  is rejected by the proxy, not forwarded.
-- A `fragment` response **MUST** be a fragment: no `<html>`, `<head>`, `<body>`, or
-  `<!doctype>`.
-- A `fragment` response **MUST NOT** contain JavaScript in any form. The sanitizer strips
-  it; shipping it is a conformance failure, not a style issue.
-- Links and `hx-*` targets **MUST** be built from the `X-Bindery-Base` header. Bindery does
-  not rewrite attributes.
+- `X-Bindery-Base` carries the public path prefix the UI is mounted at. Bindery **does not**
+  rewrite attributes in a response, in either mode.
+
+### 6.1 `mode: "sandboxed"` — the recommended tier
+
+The plugin serves a **complete document** and Bindery loads it into an iframe with an opaque
+origin (`sandbox` without `allow-same-origin`).
+
+- A response **MUST** be a full document: `<!doctype html>`, `<head>`, `<body>`.
+- A plugin **MAY** ship JavaScript and CSS without restriction. It has no access to
+  Bindery's origin, cookies, DOM, or API, and the frame's CSP sets `connect-src 'none'`.
+- Responses **MUST** carry a content type within the proxy's allowlist: `text/html`,
+  `text/css`, `text/javascript`, `application/javascript`, `application/json`, `image/*`,
+  `font/*`, `text/event-stream`. Subresources under the plugin's own mount point are
+  forwarded, so a plugin **MAY** serve its own `app.js` and `style.css`.
+- All communication with the host goes through the `postMessage` bridge. A plugin **MUST
+  NOT** rely on `fetch` or `XMLHttpRequest`; CSP blocks them.
+- Relative URLs resolve correctly, because the document is loaded at its mount path.
+
+### 6.2 `mode: "fragment"` — deprecated
+
+Still supported and still enforced exactly as before. New plugins **SHOULD** use
+`sandboxed` or `declarative` instead.
+
+- A response **MUST** be a fragment: no `<html>`, `<head>`, `<body>`, or `<!doctype>`.
+- A response **MUST** be `text/html` (or `text/event-stream` for SSE). Any other content
+  type is rejected by the proxy, not forwarded.
+- A response **MUST NOT** contain JavaScript in any form. The host sanitizes it; shipping it
+  is a conformance failure, not a style issue.
+- Links and `hx-*` targets **MUST** be built from the `X-Bindery-Base` header.
+
+`iframe` is accepted as a deprecated alias for `sandboxed`.
 
 ---
 
@@ -478,6 +502,7 @@ that the UI does not know about is a design smell.
 | Manifest body | 256 KiB | host |
 | NDJSON line | 64 KiB | both |
 | Fragment response | 512 KiB | host |
+| Sandboxed UI response | 4 MiB (configurable) | host |
 | Artifact size | 512 MiB (configurable) | host |
 | Probe timeout | 5 s | host |
 | Action timeout | 30 s | host |
@@ -514,3 +539,4 @@ not a framework, not a base image.
 | Version | Change |
 |---|---|
 | 1 | Initial contract. |
+| 1 (additive) | `ui.mode: "sandboxed"` added — a full document in an opaque-origin iframe, plugin JavaScript permitted, host communication via the `postMessage` bridge. `fragment` deprecated but unchanged. `iframe` becomes a deprecated alias for `sandboxed`. No version bump: unknown `ui.mode` values already degrade to `declarative`. |

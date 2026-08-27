@@ -51,6 +51,21 @@ public sealed class StubPlugin : IAsyncDisposable
     public string Fragment { get; set; } =
         """<div class="bnd-card"><h2>Stub</h2><button class="bnd-btn" hx-get="/plugins/stub/ui/more">More</button></div>""";
 
+    /// <summary>
+    /// The document a sandboxed plugin returns. It carries a <c>&lt;script&gt;</c> and an
+    /// inline handler on purpose: in this tier they must survive untouched, which is the
+    /// opposite of what the fragment tier asserts.
+    /// </summary>
+    public string Document { get; set; } =
+        """
+        <!doctype html>
+        <html lang="en"><head><meta charset="utf-8"><title>Stub</title></head>
+        <body onload="boot()"><main id="app">stub</main><script src="app.js"></script></body></html>
+        """;
+
+    public string Script { get; set; } =
+        """parent.postMessage({ bindery: 1, type: "ready" }, "*");""";
+
     public static async Task<StubPlugin> StartAsync(string uiMode = "fragment")
     {
         var builder = WebApplication.CreateSlimBuilder();
@@ -133,8 +148,25 @@ public sealed class StubPlugin : IAsyncDisposable
             };
         });
 
-        app.Map("/bindery/v1/ui/{**rest}", (HttpContext context) =>
-            Results.Content(plugin!.Fragment, "text/html", Encoding.UTF8));
+        app.Map("/bindery/v1/ui/{**rest}", (HttpContext context, string? rest) =>
+        {
+            // A sandboxed plugin serves its own subresources through the same mount point,
+            // and the proxy is what decides whether a content type may be forwarded at all.
+            if (rest is not null && rest.EndsWith("app.js", StringComparison.Ordinal))
+            {
+                return Results.Content(plugin!.Script, "text/javascript", Encoding.UTF8);
+            }
+
+            if (rest is not null && rest.EndsWith("forbidden.bin", StringComparison.Ordinal))
+            {
+                return Results.Bytes([1, 2, 3], "application/octet-stream");
+            }
+
+            return Results.Content(
+                uiMode == "sandboxed" ? plugin!.Document : plugin!.Fragment,
+                "text/html",
+                Encoding.UTF8);
+        });
 
         await app.StartAsync();
 
