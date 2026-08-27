@@ -7,7 +7,7 @@
 <header class="page-heading">
     <div>
         <h1>Reader credentials</h1>
-        <p>Ereaders cannot complete a sign-in redirect, so each device gets its own token. Tokens read the catalog and nothing else.</p>
+        <p>Ereaders cannot sign in, so each device gets its own read-only token.</p>
     </div>
     <span class="folio">@Model.Tokens.Count(token => token.RevokedAt is null).ToString("00") active</span>
 </header>
@@ -29,10 +29,7 @@
 
 <section class="ledger-section">
     <div class="section-heading compact">
-        <div>
-            <h2>Issue a token</h2>
-            <p>Name it after the device so revoking the right one later is obvious.</p>
-        </div>
+        <h2>Issue a token</h2>
     </div>
     <form method="post" asp-page-handler="Issue" class="token-form">
         <label for="token-name">Device name</label>
@@ -43,10 +40,7 @@
 
 <section class="ledger-section">
     <div class="section-heading compact">
-        <div>
-            <h2>Issued tokens</h2>
-            <p>Revoking is immediate and affects only the named device.</p>
-        </div>
+        <h2>Issued tokens</h2>
     </div>
 
     @if (Model.Tokens.Count == 0)

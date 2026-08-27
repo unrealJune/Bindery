@@ -19,7 +19,6 @@
     </div>
     <a class="button button-secondary" asp-page="/Library"><span>Back to register</span></a>
 </header>
-
 <div class="book-sheet">
     <div class="book-plate">
         @if (book.HasCover)
@@ -119,10 +118,7 @@
 
 <section class="ledger-section">
     <div class="section-heading compact">
-        <div>
-            <h2>Files on the volume</h2>
-            <p>Paths are relative to the library root and are the source of truth.</p>
-        </div>
+        <h2>Files on the volume</h2>
     </div>
     <div class="file-table">
         @foreach (var file in book.Files.AsList())
@@ -141,10 +137,7 @@
 {
     <section class="ledger-section">
         <div class="section-heading compact">
-            <div>
-                <h2>Acquisition history</h2>
-                <p>Every job that produced or updated this book.</p>
-            </div>
+            <h2>Acquisition history</h2>
         </div>
         <partial name="_JobRows" model="Model.History" />
     </section>

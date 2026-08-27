@@ -8,36 +8,73 @@
 <html lang="en">
 <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="color-scheme" content="light dark" />
-    <meta name="theme-color" content="#e9472b" />
+    @* Matches the two page grounds so the mobile browser chrome joins the theme. *@
+    <meta name="theme-color" content="#eef2f5" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0a161e" media="(prefers-color-scheme: dark)" />
     <title>@ViewData["Title"] · Bindery</title>
+    @*
+        htmx injects a <style> element for its indicator classes unless told not to, and the
+        CSP's `style-src 'self'` blocks it — the browser logs a violation on every page. The
+        styles it would have written are in bindery.css instead.
+    *@
+    <meta name="htmx-config" content='{"includeIndicatorStyles":false}' />
     <link rel="stylesheet" href="~/css/bindery.css" asp-append-version="true" />
+    @* Render-blocking on purpose: it applies the stored theme before first paint. *@
+    <script src="~/js/theme.js" asp-append-version="true"></script>
     <script src="~/vendor/htmx.min.js" defer></script>
-    <script src="~/js/bindery.js" defer></script>
+    <script src="~/js/bindery.js" asp-append-version="true" defer></script>
 </head>
 <body>
     <!--
-    THESIS: Bindery is a production ledger where every source moves visibly from intake to a filed book; it refuses the generic card-dashboard.
-    OWN-WORLD: Fiber-gray stock, ink-black rules, vermilion stamps, condensed job headings, square docket controls, and status marks that read without color.
-    STORY: The operator sees library health, submits a source, follows its job, resolves failures, and leaves with a durable OPDS catalog.
-    FIRST VIEWPORT: A fixed ledger masthead and section rail frame a wide intake docket beside the live production queue; the URL field and FILE SOURCE action dominate.
-    FORM: Industrial bindery production ledger, third grounded direction, seed 17762336.
-    FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance
+    THESIS: Bindery is a harbour signal station — sources arrive off the open network and are
+    filed onto a shelf, and the interface is the departure board that reports on it.
+    OWN-WORLD: Shoreline's ocean ramp and electromechanical flip dots meshed with
+    streetCryptid's daybreak paper and floating island chrome. Hairline panels, condensed
+    Rajdhani display, JetBrains Mono data, one accent per role, structure carried by rules.
+    STORY: The operator reads the floor, hands over a source, follows its job across the
+    board, resolves failures, and leaves with a durable OPDS catalog.
+    FIRST VIEWPORT: A flip-dot station board states the floor in one word beside the intake
+    docket; the live queue sits alongside it and the register runs beneath.
+    FORM: Two themes from one token set — daybreak paper by day, ocean abyss by night —
+    selected by `color-scheme`, so the OS preference works with no JavaScript at all.
+    MOBILE: The rail becomes the island: one floating segmented bar, clear of the gesture bar.
     -->
+    <div class="signal-field" aria-hidden="true"></div>
+
     <a class="skip-link" href="#main">Skip to content</a>
+
     <header class="masthead">
         <a class="wordmark" asp-page="/Index" aria-label="Bindery home">
-            <span class="wordmark-mark" aria-hidden="true">B</span>
-            <span>
-                <strong>Bindery</strong>
-                <small>Private catalog works</small>
-            </span>
+            @FlipDot.Board("B", "Bindery", "flipdot-sm")
+            <strong>Bindery</strong>
         </a>
+
         <div class="masthead-status">
-            <span class="registration-mark" aria-hidden="true"></span>
-            <span>Operator ledger</span>
-            <span>@DateTimeOffset.UtcNow.ToString("yyyy.MM.dd")</span>
+            <div class="theme-seg" data-theme-seg role="radiogroup" aria-label="Colour theme">
+                <button type="button" data-theme-set="auto" role="radio" aria-checked="true" title="Follow system theme">
+                    <span class="visually-hidden">Follow system theme</span>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+                        <circle cx="12" cy="12" r="8" />
+                        <path d="M12 4a8 8 0 0 0 0 16z" fill="currentColor" stroke="none" />
+                    </svg>
+                </button>
+                <button type="button" data-theme-set="light" role="radio" aria-checked="false" title="Light theme">
+                    <span class="visually-hidden">Light theme</span>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
+                        <circle cx="12" cy="12" r="4.2" />
+                        <path d="M12 2.6v2.2M12 19.2v2.2M4.3 4.3l1.6 1.6M18.1 18.1l1.6 1.6M2.6 12h2.2M19.2 12h2.2M4.3 19.7l1.6-1.6M18.1 5.9l1.6-1.6" />
+                    </svg>
+                </button>
+                <button type="button" data-theme-set="dark" role="radio" aria-checked="false" title="Dark theme">
+                    <span class="visually-hidden">Dark theme</span>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M20 14.2A8.4 8.4 0 0 1 9.8 4a8.4 8.4 0 1 0 10.2 10.2z" />
+                    </svg>
+                </button>
+            </div>
+
             @if (User.Identity?.IsAuthenticated == true)
             {
                 <form method="post" asp-page="/Signin" asp-page-handler="SignOut">
@@ -48,18 +85,55 @@
     </header>
 
     <div class="app-frame">
+        @*
+            One navigation, two shapes. On the desktop it is Shoreline's hairline section
+            rail; under 62rem it becomes streetCryptid's floating island — the app's only
+            navigation, riding above the system gesture bar. Same markup either way, so
+            there is no duplicated landmark for a screen reader to walk twice.
+        *@
         <nav class="section-rail" aria-label="Primary">
-            <a class="@(path == "/" ? "is-current" : null)" asp-page="/Index">Intake</a>
-            <a class="@(path.StartsWithSegments("/Library") || path.StartsWithSegments("/Book") ? "is-current" : null)" asp-page="/Library">Library</a>
-            <a class="@(path.StartsWithSegments("/Downloads") ? "is-current" : null)" asp-page="/Downloads">Jobs</a>
-            <a class="@(path.StartsWithSegments("/Plugins") ? "is-current" : null)" asp-page="/Plugins">Plugins</a>
-            <a class="@(path.StartsWithSegments("/FeedTokens") ? "is-current" : null)" asp-page="/FeedTokens">Readers</a>
+            <a class="@(path == "/" ? "is-current" : null)" asp-page="/Index">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M12 3v10" /><path d="M8 11l4 4 4-4" /><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" />
+                </svg>
+                <span>Intake</span>
+            </a>
+            <a class="@(path.StartsWithSegments("/Library") || path.StartsWithSegments("/Book") ? "is-current" : null)" asp-page="/Library">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M4 4h5a2 2 0 0 1 2 2v13a2 2 0 0 0-2-2H4z" /><path d="M20 4h-5a2 2 0 0 0-2 2v13a2 2 0 0 1 2-2h5z" />
+                </svg>
+                <span>Library</span>
+            </a>
+            <a class="@(path.StartsWithSegments("/Downloads") ? "is-current" : null)" asp-page="/Downloads">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M3 12h3.5l2.5-7 4 14 2.5-7H21" />
+                </svg>
+                <span>Jobs</span>
+            </a>
+            <a class="@(path.StartsWithSegments("/Plugins") ? "is-current" : null)" asp-page="/Plugins">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M9 3v3.5M15 3v3.5" /><path d="M5.5 6.5h13v6a5 5 0 0 1-5 5h-3a5 5 0 0 1-5-5z" /><path d="M12 17.5V21" />
+                </svg>
+                <span>Plugins</span>
+            </a>
+            <a class="@(path.StartsWithSegments("/FeedTokens") ? "is-current" : null)" asp-page="/FeedTokens">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <rect x="4.5" y="3" width="15" height="18" rx="1.5" /><path d="M9.5 17.5h5" /><path d="M8 7h8" /><path d="M8 10.5h5" />
+                </svg>
+                <span>Readers</span>
+            </a>
+
             @if (pluginNavigation.Count > 0)
             {
                 <span class="rail-divider">Plugin desks</span>
                 @foreach (var entry in pluginNavigation)
                 {
-                    <a class="@(path.StartsWithSegments(entry.Href) ? "is-current" : null)" href="@entry.Href">@entry.Label</a>
+                    <a class="rail-extra @(path.StartsWithSegments(entry.Href) ? "is-current" : null)" href="@entry.Href">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <rect x="3.5" y="3.5" width="7" height="7" rx="1" /><rect x="13.5" y="3.5" width="7" height="7" rx="1" /><rect x="3.5" y="13.5" width="7" height="7" rx="1" /><rect x="13.5" y="13.5" width="7" height="7" rx="1" />
+                        </svg>
+                        <span>@entry.Label</span>
+                    </a>
                 }
             }
         </nav>
@@ -74,7 +148,6 @@
     </div>
 
     <footer class="site-footer">
-        <span>Files are the source of truth.</span>
         <a href="/opds">OPDS 1.2</a>
         <a href="/opds/v2/">OPDS 2.0</a>
         <span>Bindery @ThisAssembly.Version</span>

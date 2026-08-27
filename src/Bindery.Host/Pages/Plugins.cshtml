@@ -6,10 +6,7 @@
 }
 
 <header class="page-heading">
-    <div>
-        <h1>Installed downloaders</h1>
-        <p>Each plugin is a container that speaks HTTP. Bindery asks it what it is; nothing here is discovered from disk.</p>
-    </div>
+    <h1>Installed downloaders</h1>
     <span class="folio">@Model.Cards.Count.ToString("00") configured</span>
 </header>
 
@@ -132,7 +129,7 @@
         @if (manifest is not null && manifest.Ui.Mode.ServesHtml)
         {
             <p class="plugin-desk-link">
-                <a class="text-action" href="/plugins/@descriptor.Name/ui/">Open @descriptor.DisplayName desk →</a>
+                <a class="text-action" href="/plugins/@descriptor.Name/ui/">Open @descriptor.DisplayName desk ›</a>
             </p>
         }
     </section>

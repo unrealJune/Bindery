@@ -5,6 +5,7 @@
 }
 
 <section class="gate">
+    @FlipDot.Board("JAMMED", "Something jammed", "flipdot-lg")
     <h1>Something jammed</h1>
     <p>The request failed before it produced a page. The details are in the server log, not here.</p>
     @if (Model.RequestId is not null)

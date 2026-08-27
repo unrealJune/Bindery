@@ -2,13 +2,22 @@
 @model IndexModel
 @{
     ViewData["Title"] = "Intake";
+
+    var running = Model.ActiveJobs.Count(job => job.Status == JobStatus.Running);
+
+    // The board states the floor in one word; the line beneath it only earns its place when
+    // there is a count to give. When the floor is clear, CLEAR has already said everything,
+    // so the sub-line and the list both disappear rather than repeating it.
+    var (boardWord, boardRead) = Model.ActiveJobs.Count switch
+    {
+        0 => ("CLEAR", null),
+        _ when running > 0 => ("RUNNING", $"{running} of {Model.ActiveJobs.Count} handed to a downloader"),
+        var waiting => ("QUEUED", $"{waiting} waiting for a downloader")
+    };
 }
 
 <header class="page-heading">
-    <div>
-        <h1>Bring a source into the library.</h1>
-        <p>Bindery routes the URL to an installed downloader, records the job, and files the result without sharing your library volume.</p>
-    </div>
+    <h1>Bring a source into the library.</h1>
     <span class="folio">@Model.TotalBooks.ToString("0000") books filed</span>
 </header>
 
@@ -16,7 +25,6 @@
     <section class="intake-docket" aria-labelledby="intake-title">
         <div class="docket-heading">
             <h2 id="intake-title">Source intake</h2>
-            <span>HTTP handoff</span>
         </div>
         <form method="post" asp-page-handler="Queue" class="intake-form">
             <div asp-validation-summary="ModelOnly" class="validation-summary" role="alert"></div>
@@ -41,22 +49,22 @@
                 </button>
             </div>
         </form>
-        <p class="docket-note">Credentials stay encrypted in Bindery. Downloaders receive only the settings and job data they need over HTTP.</p>
     </section>
 
     <section class="queue-docket" aria-labelledby="queue-title">
-        <div class="docket-heading">
-            <h2 id="queue-title">On the floor</h2>
-            <a asp-page="/Downloads">Full job ledger</a>
-        </div>
-        @if (Model.ActiveJobs.Count == 0)
-        {
-            <div class="empty-state">
-                <strong>The floor is clear.</strong>
-                <span>Queued and running jobs will appear here.</span>
+        @* The station board is this panel's heading, not a panel of its own. *@
+        <div class="station">
+            @FlipDot.Board(boardWord, $"Floor status: {boardWord}")
+            <div class="station-read">
+                <strong id="queue-title">On the floor</strong>
+                @if (boardRead is not null)
+                {
+                    <span>@boardRead</span>
+                }
             </div>
-        }
-        else
+        </div>
+
+        @if (Model.ActiveJobs.Count > 0)
         {
             <ol class="job-strip">
                 @foreach (var job in Model.ActiveJobs)
@@ -77,10 +85,7 @@
 
 <section class="ledger-section">
     <div class="section-heading">
-        <div>
-            <h2>Recently filed</h2>
-            <p>The newest books in the on-disk library.</p>
-        </div>
+        <h2>Recently filed</h2>
         <a class="text-action" asp-page="/Library">Open full register</a>
     </div>
 
@@ -88,7 +93,7 @@
     {
         <div class="empty-state empty-state-wide">
             <strong>No books are filed yet.</strong>
-            <span>Submit a supported source above, or scan an existing Bindery library.</span>
+            <span>File a source above, or rescan the volume from the register.</span>
         </div>
     }
     else
@@ -103,7 +108,7 @@
                         <small>@book.AuthorLine</small>
                     </span>
                     <span class="book-meta">@(book.Series.HasValue() ? book.Series.Value.Name : book.Files.Head.Format.ToUpperInvariant())</span>
-                    <span class="row-arrow" aria-hidden="true">→</span>
+                    <span class="row-arrow" aria-hidden="true">›</span>
                 </a>
             }
         </div>

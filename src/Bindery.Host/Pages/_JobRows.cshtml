@@ -35,7 +35,11 @@ else
                     }
                 </div>
                 <div class="job-progress">
-                    <span style="--progress: @Math.Clamp(job.Percent, 0, 100)%"></span>
+                    @* A real <progress>: it reports its own value to assistive technology, and
+                       it removes the one inline style in this codebase — which the CSP's
+                       `style-src 'self'` would have blocked in the browser anyway. *@
+                    <progress class="job-meter" max="100" value="@Math.Clamp(job.Percent, 0, 100)"
+                              aria-label="Progress for @job.Url"></progress>
                     <data value="@job.Percent">@job.Percent.ToString("0")%</data>
                 </div>
                 <time datetime="@job.CreatedAt.ToString("O")">@job.CreatedAt.ToLocalTime().ToString("MMM d, HH:mm")</time>

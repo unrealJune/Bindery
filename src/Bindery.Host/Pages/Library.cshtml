@@ -6,10 +6,7 @@
 }
 
 <header class="page-heading">
-    <div>
-        <h1>Register of filed books</h1>
-        <p>Everything on the library volume, indexed. The files are the record; this page reads them back.</p>
-    </div>
+    <h1>Register of filed books</h1>
     <form method="post" asp-page-handler="Scan">
         <button class="button button-secondary" type="submit">
             <span>Rescan volume</span>
@@ -20,9 +17,9 @@
 
 <section class="ledger-section">
     <form class="register-search" method="get">
-        <label for="q">Find a title, author, tag, or series</label>
+        <label for="q">Search</label>
         <div class="register-search-row">
-            <input id="q" name="q" class="control control-large" value="@query" placeholder="Search the register…" />
+            <input id="q" name="q" class="control control-large" value="@query" placeholder="Title, author, tag, or series…" />
             <button class="button button-primary" type="submit"><span>Search</span></button>
             @if (query.Length > 0)
             {
@@ -36,7 +33,6 @@
             <h2>@(query.Length > 0 ? $"Matches for “{query}”" : "All books")</h2>
             <p>@Model.Books.Total.ToString("0000") filed · page @(Model.Books.PageIndex + 1) of @Model.Books.PageCount</p>
         </div>
-        <span class="live-key"><i aria-hidden="true"></i> Index of @Model.Books.Total</span>
     </div>
 
     @if (Model.Books.Items.Count == 0)
@@ -67,7 +63,7 @@
                             @book.Files.AsList()[0].Format.ToUpperInvariant()
                         }
                     </span>
-                    <span class="row-arrow" aria-hidden="true">→</span>
+                    <span class="row-arrow" aria-hidden="true">›</span>
                 </a>
             }
         </div>
@@ -75,20 +71,20 @@
         <nav class="pager" aria-label="Register pages">
             @if (Model.Books.HasPrevious)
             {
-                <a class="text-action" asp-page="/Library" asp-route-q="@query" asp-route-page="@(Model.Books.PageIndex - 1)">← Previous</a>
+                <a class="text-action" asp-page="/Library" asp-route-q="@query" asp-route-page="@(Model.Books.PageIndex - 1)">‹ Previous</a>
             }
             else
             {
-                <span class="pager-inert">← Previous</span>
+                <span class="pager-inert">‹ Previous</span>
             }
             <span class="pager-position">@(Model.Books.PageIndex + 1) / @Model.Books.PageCount</span>
             @if (Model.Books.HasNext)
             {
-                <a class="text-action" asp-page="/Library" asp-route-q="@query" asp-route-page="@(Model.Books.PageIndex + 1)">Next →</a>
+                <a class="text-action" asp-page="/Library" asp-route-q="@query" asp-route-page="@(Model.Books.PageIndex + 1)">Next ›</a>
             }
             else
             {
-                <span class="pager-inert">Next →</span>
+                <span class="pager-inert">Next ›</span>
             }
         </nav>
     }
@@ -96,10 +92,7 @@
 
 <section class="ledger-section">
     <div class="section-heading compact">
-        <div>
-            <h2>Browse marks</h2>
-            <p>The same groupings ereaders see in the OPDS catalog.</p>
-        </div>
+        <h2>Browse marks</h2>
     </div>
     <div class="grouping-grid">
         <div class="grouping-column">
