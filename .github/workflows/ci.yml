@@ -162,15 +162,19 @@ jobs:
 
       # Unlike FanFicFare's, this plugin keeps durable state — ingested chapters, source
       # attribution, manual ordering — so /work is a real volume rather than a tmpfs of
-      # scratch. Still unprivileged with a read-only root.
+      # scratch. A *named* volume specifically: Docker seeds one from the image's own
+      # directory, so this also proves the Dockerfile chowns /work to the unprivileged user
+      # it then switches to. A bare tmpfs would mount root-owned and mask that. In the chart
+      # the equivalent guarantee is podSecurityContext.fsGroup.
       - name: Start plugin
         run: |
+          docker volume create hedgerow-work
           docker run -d --name plugin \
             -p 8080:8080 \
             -e BINDERY_PLUGIN_TOKEN="$BINDERY_PLUGIN_TOKEN" \
             --read-only \
             --tmpfs /tmp:rw,size=64m \
-            --mount type=tmpfs,destination=/work,tmpfs-size=256m \
+            -v hedgerow-work:/work \
             bindery-plugin-hedgerow:ci
 
       - name: Wait for health
@@ -210,4 +214,6 @@ jobs:
 
       - name: Stop plugin
         if: always()
-        run: docker rm -f plugin || true
+        run: |
+          docker rm -f plugin || true
+          docker volume rm hedgerow-work || true
