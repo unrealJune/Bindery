@@ -7,6 +7,8 @@ services:
     depends_on:
       fanficfare:
         condition: service_healthy
+      hedgerow:
+        condition: service_healthy
     ports:
       - "8080:8080"
     environment:
@@ -19,6 +21,9 @@ services:
       Bindery__Plugins__Registry__0__Name: fanficfare
       Bindery__Plugins__Registry__0__BaseUrl: http://fanficfare:8080
       Bindery__Plugins__Registry__0__Enabled: "true"
+      Bindery__Plugins__Registry__1__Name: hedgerow
+      Bindery__Plugins__Registry__1__BaseUrl: http://hedgerow:8080
+      Bindery__Plugins__Registry__1__Enabled: "true"
     volumes:
       - bindery-data:/data
       - bindery-library:/library
@@ -47,7 +52,30 @@ services:
       retries: 3
       start_period: 20s
 
+  hedgerow:
+    build:
+      context: ../plugins/hedgerow
+      dockerfile: Dockerfile
+    image: bindery-plugin-hedgerow:dev
+    environment:
+      BINDERY_PLUGIN_TOKEN: dev-plugin-token
+      BINDERY_PLUGIN_PORT: "8080"
+      # Optional: a Discord bot token can also be set through the plugin's config in the UI.
+      # HEDGEROW_DISCORD_TOKEN: ""
+      # HEDGEROW_DISCORD_CHANNELS: ""
+    # Unlike fanficfare, this volume holds durable state (SQLite under /work/data). It is the
+    # plugin's own volume, still never shared with the host — artifacts move over HTTP.
+    volumes:
+      - hedgerow-work:/work
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys,urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=4).status == 200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
 volumes:
   bindery-data:
   bindery-library:
   fanficfare-work:
+  hedgerow-work:

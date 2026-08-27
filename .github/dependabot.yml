@@ -71,6 +71,28 @@ updates:
           - minor
           - patch
 
+  - package-ecosystem: pip
+    directory: /plugins/hedgerow
+    schedule:
+      interval: daily
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - plugin/hedgerow
+    commit-message:
+      prefix: 'plugin(hedgerow)'
+    groups:
+      plugin-server:
+        patterns:
+          - fastapi
+          - uvicorn*
+          - python-multipart
+        update-types:
+          - minor
+          - patch
+    # FanFicFare and discord.py are both left ungrouped: this plugin's two sources break
+    # independently, and each deserves its own reviewable PR against the conformance run.
+
   # ---------------------------------------------------------------- images
 
   - package-ecosystem: docker
@@ -97,6 +119,23 @@ updates:
       - plugin/fanficfare
     commit-message:
       prefix: 'plugin(fanficfare)'
+
+  - package-ecosystem: docker
+    directory: /plugins/hedgerow
+    schedule:
+      interval: weekly
+      day: monday
+    labels:
+      - dependencies
+      - plugin/hedgerow
+    commit-message:
+      prefix: 'plugin(hedgerow)'
+    ignore:
+      # discord.py still imports `audioop`, removed from the stdlib in 3.13. Moving this
+      # image off the 3.12 line is a deliberate decision that needs audioop-lts verified,
+      # not a PR to wave through.
+      - dependency-name: python
+        update-types: ['version-update:semver-major', 'version-update:semver-minor']
 
   # ---------------------------------------------------------------- CI
 

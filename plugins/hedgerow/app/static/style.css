@@ -1,0 +1,119 @@
+/* Hedgerow's own styling. It links Bindery's design tokens (the --bnd-* custom properties)
+   and reuses them where it can, so light/dark mode and any host restyle come for free, with
+   plain fallbacks for when the plugin document is opened outside Bindery. */
+
+:root {
+  --hg-gap: var(--bnd-space-3, 12px);
+  --hg-fg: var(--bnd-fg, #1c1c1c);
+  --hg-muted: var(--bnd-fg-muted, #6b7280);
+  --hg-bg: var(--bnd-bg, #ffffff);
+  --hg-card: var(--bnd-surface, #f6f7f9);
+  --hg-border: var(--bnd-border, #d9dde3);
+  --hg-accent: var(--bnd-accent, #3b6ea5);
+  --hg-radius: var(--bnd-radius, 8px);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: var(--hg-gap);
+  font-family: var(--bnd-font, system-ui, -apple-system, Segoe UI, Roboto, sans-serif);
+  color: var(--hg-fg);
+  background: var(--hg-bg);
+  line-height: 1.5;
+}
+
+body.hg-dark {
+  --hg-fg: var(--bnd-fg, #e6e6e6);
+  --hg-muted: var(--bnd-fg-muted, #9aa4b2);
+  --hg-bg: var(--bnd-bg, #14171c);
+  --hg-card: var(--bnd-surface, #1d222b);
+  --hg-border: var(--bnd-border, #333b47);
+}
+
+h1 { font-size: 1.3rem; margin: 0 0 var(--hg-gap); }
+h2 { font-size: 1.05rem; margin: 0 0 8px; }
+
+.hg-muted { color: var(--hg-muted); }
+.hg-row { display: flex; align-items: center; gap: var(--hg-gap); }
+.hg-spread { justify-content: space-between; }
+
+.hg-card {
+  background: var(--hg-card);
+  border: 1px solid var(--hg-border);
+  border-radius: var(--hg-radius);
+  padding: var(--hg-gap);
+  margin-bottom: var(--hg-gap);
+}
+
+.hg-btn {
+  font: inherit;
+  padding: 6px 12px;
+  border: 1px solid var(--hg-border);
+  border-radius: var(--hg-radius);
+  background: var(--hg-bg);
+  color: var(--hg-fg);
+  cursor: pointer;
+}
+.hg-btn:hover { border-color: var(--hg-accent); }
+
+.hg-select, .hg-pin {
+  font: inherit;
+  padding: 4px 6px;
+  border: 1px solid var(--hg-border);
+  border-radius: var(--hg-radius);
+  background: var(--hg-bg);
+  color: var(--hg-fg);
+}
+.hg-pin { width: 5rem; }
+
+.hg-badge {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--hg-border);
+  white-space: nowrap;
+}
+.hg-badge.rr { background: rgba(59, 110, 165, 0.12); color: var(--hg-accent); }
+.hg-badge.discord { background: rgba(114, 89, 218, 0.14); color: #7259da; }
+.hg-badge.state-connected { color: #227a4b; border-color: #227a4b; }
+.hg-badge.state-error { color: #b23b3b; border-color: #b23b3b; }
+
+/* Chapter list — the drag-and-drop surface. */
+.hg-list { list-style: none; margin: 0; padding: 0; }
+
+.hg-chapter {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: var(--hg-gap);
+  padding: 10px 12px;
+  margin-bottom: 6px;
+  background: var(--hg-bg);
+  border: 1px solid var(--hg-border);
+  border-radius: var(--hg-radius);
+  cursor: grab;
+}
+.hg-chapter:active { cursor: grabbing; }
+.hg-chapter.dragging { opacity: 0.5; }
+.hg-chapter.drop-target { border-color: var(--hg-accent); border-style: dashed; }
+
+.hg-handle { color: var(--hg-muted); font-size: 1.1rem; user-select: none; }
+.hg-title { font-weight: 500; }
+.hg-num { color: var(--hg-muted); font-variant-numeric: tabular-nums; }
+
+.hg-empty { padding: var(--hg-gap); text-align: center; }
+
+.hg-toast {
+  margin-bottom: var(--hg-gap);
+  padding: 8px 12px;
+  border-radius: var(--hg-radius);
+  border: 1px solid var(--hg-border);
+  background: var(--hg-card);
+}
+.hg-defn { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; }
+.hg-defn dt { color: var(--hg-muted); }
+.hg-defn dd { margin: 0; }

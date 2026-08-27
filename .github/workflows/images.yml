@@ -23,6 +23,10 @@ jobs:
             context: plugins/fanficfare
             file: plugins/fanficfare/Dockerfile
             image: ghcr.io/${{ github.repository_owner }}/bindery-plugin-fanficfare
+          - name: hedgerow
+            context: plugins/hedgerow
+            file: plugins/hedgerow/Dockerfile
+            image: ghcr.io/${{ github.repository_owner }}/bindery-plugin-hedgerow
     steps:
       - uses: actions/checkout@v7
       - uses: docker/setup-buildx-action@v4
