@@ -1,0 +1,113 @@
+version: 2
+
+# Two rules shape everything below.
+#
+# 1. The host is pinned to net8.0 on purpose (see CLAUDE.md — it builds in more places
+#    that way), so nothing is allowed to propose a major bump that drags it to net9+.
+#    That means the .NET base images and the framework-versioned packages are
+#    major-locked here; moving off net8.0 is a deliberate decision, not a PR to merge.
+#
+# 2. The FanFicFare plugin image is where churn is *supposed* to happen. Fanfic sites
+#    break, upstream ships fixes, and absorbing that without touching Bindery is the
+#    whole point of the sidecar architecture. So it gets its own ungrouped PR stream
+#    on a fast cadence, and no version ceiling at all.
+
+updates:
+  # ---------------------------------------------------------------- .NET
+
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - dotnet
+    groups:
+      dotnet-minor-patch:
+        patterns: ['*']
+        update-types:
+          - minor
+          - patch
+      test-tooling:
+        patterns:
+          - xunit*
+          - Microsoft.NET.Test.Sdk
+    ignore:
+      # Framework-versioned: these track the TargetFramework, not their own roadmap.
+      # A major here is a net8.0 -> net9.0 migration wearing a disguise.
+      - dependency-name: Microsoft.AspNetCore.*
+        update-types: ['version-update:semver-major']
+      - dependency-name: Microsoft.EntityFrameworkCore.*
+        update-types: ['version-update:semver-major']
+      - dependency-name: Microsoft.Extensions.*
+        update-types: ['version-update:semver-major']
+    # HtmlSanitizer is deliberately absent from `ignore`. It is security-critical
+    # (CLAUDE.md: "the sanitizer is security-critical"), so every update including
+    # majors should land as a PR and be reviewed against the XSS conformance suite.
+
+  # ---------------------------------------------------------------- plugin: Python
+
+  - package-ecosystem: pip
+    directory: /plugins/fanficfare
+    schedule:
+      interval: daily
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - plugin/fanficfare
+    commit-message:
+      prefix: 'plugin(fanficfare)'
+    groups:
+      # The web-server layer is boring and can travel together. FanFicFare itself is
+      # left ungrouped on purpose so it always arrives as its own reviewable PR.
+      plugin-server:
+        patterns:
+          - fastapi
+          - uvicorn*
+          - python-multipart
+        update-types:
+          - minor
+          - patch
+
+  # ---------------------------------------------------------------- images
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    labels:
+      - dependencies
+      - docker
+    ignore:
+      # Bindery's runtime is `aspnet` with no interpreter in it and must stay on the
+      # 8.0 line alongside TargetFramework.
+      - dependency-name: mcr.microsoft.com/dotnet/*
+        update-types: ['version-update:semver-major']
+
+  - package-ecosystem: docker
+    directory: /plugins/fanficfare
+    schedule:
+      interval: weekly
+      day: monday
+    labels:
+      - dependencies
+      - plugin/fanficfare
+    commit-message:
+      prefix: 'plugin(fanficfare)'
+
+  # ---------------------------------------------------------------- CI
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    labels:
+      - dependencies
+      - ci
+    groups:
+      actions:
+        patterns: ['*']

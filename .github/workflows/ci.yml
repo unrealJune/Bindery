@@ -27,3 +27,98 @@ jobs:
         run: helm template bindery deploy/helm/bindery
       - name: Plugin conformance self-test
         run: python tests/conformance/run.py --self-test --no-color
+
+  # The gate that makes dependency bumps meaningful.
+  #
+  # `build-test` above never installs Python and never sees FanFicFare, so on its own it
+  # would wave through a FanFicFare bump without evidence. This job builds the real
+  # plugin image and runs the black-box suite — including the XSS vector set, which is a
+  # merge gate — against the running container.
+  #
+  # Deliberately not path-filtered: a skipped workflow leaves a required status check
+  # pending forever, so this runs on every PR and leans on the buildx cache for speed.
+  plugin-conformance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      BINDERY_PLUGIN_TOKEN: conformance-ci
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build plugin image
+        uses: docker/build-push-action@v6
+        with:
+          context: plugins/fanficfare
+          file: plugins/fanficfare/Dockerfile
+          push: false
+          load: true
+          tags: bindery-plugin-fanficfare:ci
+          cache-from: type=gha,scope=fanficfare
+          cache-to: type=gha,scope=fanficfare,mode=max
+
+      # Started the way the chart runs it — unprivileged, read-only root, /work the only
+      # writable path. If a dependency bump breaks that posture, it fails here and not in
+      # a cluster.
+      - name: Start plugin
+        run: |
+          docker run -d --name plugin \
+            -p 8080:8080 \
+            -e BINDERY_PLUGIN_TOKEN="$BINDERY_PLUGIN_TOKEN" \
+            -e BINDERY_FFF_ALLOW_TEST_SITES=1 \
+            --read-only \
+            --tmpfs /tmp:rw,size=64m \
+            bindery-plugin-fanficfare:ci
+
+      - name: Wait for health
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:8080/healthz >/dev/null 2>&1; then
+              echo "healthy after ${i}s"; exit 0
+            fi
+            sleep 1
+          done
+          echo "plugin never became healthy"; exit 1
+
+      # Confirms the pinned FanFicFare actually resolves and runs in the image, which a
+      # pip-install-only check would not prove.
+      - name: Verify FanFicFare is present
+        run: |
+          docker exec plugin fanficfare --version
+          docker exec plugin python -c "import fanficfare, sys; print('fanficfare', fanficfare.__file__)"
+
+      # FanFicFare ships adapters for four fake sites that fabricate a story with no
+      # network at all, which is why BINDERY_FFF_ALLOW_TEST_SITES is set above. That makes
+      # a genuine end-to-end download — queue, stream progress, produce an EPUB, extract a
+      # cover — cheap and hermetic, so `download.real` runs here instead of being skipped.
+      # The URL is read out of the installed FanFicFare rather than hardcoded, so a version
+      # bump that changes the example format does not silently stop testing anything.
+      - name: Resolve offline test-site URL
+        run: |
+          url=$(docker exec plugin python -c \
+            "from fanficfare import adapters; print((dict(adapters.getSiteExamples()).get('test1.com') or [''])[0])" \
+            | tr -d '\r')
+          echo "Resolved: ${url:-<none>}"
+          echo "DOWNLOAD_URL=$url" >> "$GITHUB_ENV"
+
+      - name: Conformance suite
+        run: |
+          extra=""
+          if [ -n "$DOWNLOAD_URL" ]; then
+            extra="--download-url $DOWNLOAD_URL --download-timeout 120"
+          else
+            echo "::warning::no offline test adapter found; skipping the real-download check"
+          fi
+          python tests/conformance/run.py \
+            --base-url http://localhost:8080 \
+            --token "$BINDERY_PLUGIN_TOKEN" \
+            --no-color $extra
+
+      - name: Plugin logs
+        if: always()
+        run: docker logs plugin || true
+
+      - name: Stop plugin
+        if: always()
+        run: docker rm -f plugin || true
