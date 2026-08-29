@@ -27,6 +27,10 @@ DB_PATH = os.path.join(DATA_DIR, "hedgerow.db")
 SOURCE_ROYALROAD = "royalroad"
 SOURCE_DISCORD = "discord"
 
+# Which parser version the stored `chapter_key` values were computed with. See
+# `reindex_chapters`.
+SETTING_KEY_VERSION = "chapter_key_version"
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
@@ -186,6 +190,34 @@ class Store:
             rows = self._db.execute("SELECT * FROM works ORDER BY created").fetchall()
         return [_work(r) for r in rows]
 
+    def find_work(self, *, source_url: Optional[str] = None,
+                  hedgerow_url: Optional[str] = None) -> Optional[Work]:
+        """An existing work by either of its URLs, without creating one."""
+        with self._lock:
+            row = None
+            if source_url:
+                row = self._db.execute(
+                    "SELECT * FROM works WHERE source_url=?", (source_url,)
+                ).fetchone()
+            if row is None and hedgerow_url:
+                row = self._db.execute(
+                    "SELECT * FROM works WHERE hedgerow_url=?", (hedgerow_url,)
+                ).fetchone()
+        return _work(row) if row else None
+
+    def delete_work(self, work_id: int) -> bool:
+        """Forget a work entirely: its chapters and channel bindings go with it.
+
+        `PRAGMA foreign_keys=ON` plus the ON DELETE CASCADE clauses in the schema are what
+        make that one statement rather than three, and what stops a chapter surviving the
+        work it belonged to. Nothing here reaches into Bindery: a book already filed in the
+        library stays filed, because the library is not this plugin's to edit.
+        """
+        with self._lock:
+            cur = self._db.execute("DELETE FROM works WHERE id=?", (work_id,))
+            self._db.commit()
+            return cur.rowcount > 0
+
     # ------------------------------------------------------------ bindings
 
     def bind_channel(self, channel_id: str, work_id: int) -> None:
@@ -203,6 +235,13 @@ class Store:
                 "SELECT work_id FROM channel_bindings WHERE channel_id=?", (channel_id,)
             ).fetchone()
         return int(row["work_id"]) if row else None
+
+    def unbind_channel(self, channel_id: str) -> bool:
+        """Stop watching a channel's forwarded EPUBs. Chapters already ingested stay."""
+        with self._lock:
+            cur = self._db.execute("DELETE FROM channel_bindings WHERE channel_id=?", (channel_id,))
+            self._db.commit()
+            return cur.rowcount > 0
 
     def bindings(self) -> list[dict]:
         with self._lock:
@@ -260,6 +299,72 @@ class Store:
             ).fetchone()
         return row["body_html"] if row else ""
 
+    def reindex_chapters(self, key_of, number_of, *, version: str) -> int:
+        """Recompute every stored chapter's key and number after a parser change.
+
+        The `chapter_key` a chapter was stored under is whatever the parser said at the time,
+        and improving the parser silently changes that answer. Without this, the next scrape
+        would find none of its keys and re-ingest the whole back catalogue as duplicates —
+        which is exactly what the UNIQUE constraint was meant to prevent.
+
+        Runs once per parser version, guarded by a setting, and keeps the earliest-seen row
+        when a smarter parser collapses two rows onto one key. Returns rows rewritten.
+        """
+        if self.get_setting(SETTING_KEY_VERSION) == version:
+            return 0
+
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT id, work_id, chapter_key, title FROM chapters "
+                "ORDER BY work_id, first_seen, id"
+            ).fetchall()
+
+            try:
+                # Park every row on a temporary, globally unique key before assigning the
+                # real ones. Rewriting in place collides with UNIQUE(work_id, chapter_key)
+                # the moment one row's new key is a key another row has not yet given up.
+                self._db.execute("UPDATE chapters SET chapter_key = '#' || id")
+
+                seen: dict[tuple[int, str], int] = {}
+                rewritten = 0
+
+                for row in rows:
+                    work_id, chapter_id = int(row["work_id"]), int(row["id"])
+                    key = key_of(row["title"])
+                    arc, part = number_of(row["title"])
+
+                    if (work_id, key) in seen:
+                        # First-seen precedence again, one level up: two rows the old parser
+                        # told apart are now one chapter, and the older row is the one that
+                        # owns it.
+                        self._db.execute("DELETE FROM chapters WHERE id=?", (chapter_id,))
+                        continue
+
+                    seen[(work_id, key)] = chapter_id
+
+                    if key != row["chapter_key"]:
+                        rewritten += 1
+
+                    self._db.execute(
+                        "UPDATE chapters SET chapter_key=?, arc=?, part=? WHERE id=?",
+                        (key, arc, part, chapter_id),
+                    )
+
+                self._db.execute(
+                    "INSERT INTO settings(key, value) VALUES(?, ?) "
+                    "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                    (SETTING_KEY_VERSION, version),
+                )
+                self._db.commit()
+            except Exception:
+                # All or nothing. Half-parked keys would be worse than the old ones, and the
+                # guard setting is written in the same transaction so a failure retries next
+                # boot rather than being silently marked done.
+                self._db.rollback()
+                raise
+
+        return rewritten
+
     def set_manual_order(self, work_id: int, ordered_ids: Iterable[int]) -> None:
         with self._lock:
             for rank, chapter_id in enumerate(ordered_ids):
@@ -276,6 +381,15 @@ class Store:
                 (number, chapter_id, work_id),
             )
             self._db.commit()
+
+    def delete_chapter(self, work_id: int, chapter_id: int) -> bool:
+        """Drop one ingested chapter, so the source that supplies it next owns it again."""
+        with self._lock:
+            cur = self._db.execute(
+                "DELETE FROM chapters WHERE id=? AND work_id=?", (chapter_id, work_id)
+            )
+            self._db.commit()
+            return cur.rowcount > 0
 
     def clear_overrides(self, work_id: int) -> None:
         with self._lock:

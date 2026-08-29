@@ -22,6 +22,7 @@ public sealed class DownloadRunner(
     PluginClient client,
     PluginSettingsStore settings,
     LibraryStore library,
+    BookIndexer indexer,
     IOptions<BinderyOptions> options,
     ILogger<DownloadRunner> logger)
 {
@@ -207,9 +208,10 @@ public sealed class DownloadRunner(
             var sidecar = BuildSidecar(metadata, descriptor.Name, existing);
             var placement = await library.PlaceAsync(sidecar, staged, existing?.DirectoryPath, cancellationToken);
 
-            var book = await IndexAsync(sidecar, placement, existing, cancellationToken);
+            var placed = sidecar with { Files = placement.Files, CoverPath = placement.CoverPath };
+            var indexed = await indexer.IndexAsync(placed, placement.DirectoryPath, existing, cancellationToken);
 
-            job.BookId = book.Id;
+            job.BookId = indexed.Book.Id;
             job.Status = JobStatus.Succeeded;
             job.Percent = 100;
             job.Message = "Done";
@@ -245,79 +247,6 @@ public sealed class DownloadRunner(
             UpdatedAt = metadata.Updated.OrNullable() ?? DateTimeOffset.UtcNow
         };
 
-    /// <summary>
-    /// Writes the index rows for a placed book, reusing author, tag, and series rows.
-    /// </summary>
-    private async Task<BookEntity> IndexAsync(
-        SidecarMetadata metadata,
-        Placement placement,
-        BookEntity? existing,
-        CancellationToken cancellationToken)
-    {
-        var book = existing;
-
-        if (book is null)
-        {
-            book = new BookEntity { Id = metadata.Id, AddedAt = metadata.AddedAt };
-            db.Books.Add(book);
-        }
-        else
-        {
-            await db.Entry(book).Collection(b => b.Authors).LoadAsync(cancellationToken);
-            await db.Entry(book).Collection(b => b.Tags).LoadAsync(cancellationToken);
-            await db.Entry(book).Collection(b => b.Files).LoadAsync(cancellationToken);
-
-            db.BookAuthors.RemoveRange(book.Authors);
-            db.BookTags.RemoveRange(book.Tags);
-            db.BookFiles.RemoveRange(book.Files);
-        }
-
-        book.Title = metadata.Title;
-        book.SortTitle = Domain.Naming.sortTitle(metadata.Title);
-        book.Summary = metadata.Summary;
-        book.Language = metadata.Language;
-        book.Published = metadata.Published;
-        book.UpdatedAt = metadata.UpdatedAt;
-        book.SeriesIndex = metadata.SeriesIndex;
-        book.SourceUrl = metadata.SourceUrl;
-        book.SourcePlugin = metadata.SourcePlugin;
-        book.SourceId = metadata.SourceId;
-        book.Chapters = metadata.Chapters;
-        book.DirectoryPath = placement.DirectoryPath;
-        book.CoverPath = placement.CoverPath;
-        book.Series = metadata.Series is null ? null : await GetOrAddSeriesAsync(metadata.Series, cancellationToken);
-
-        var order = 0;
-
-        foreach (var name in metadata.Authors)
-        {
-            var author = await GetOrAddAuthorAsync(name, cancellationToken);
-            book.Authors.Add(new BookAuthorEntity { Book = book, Author = author, Order = order++ });
-        }
-
-        foreach (var name in metadata.Tags.Distinct(StringComparer.OrdinalIgnoreCase))
-        {
-            var tag = await GetOrAddTagAsync(name, cancellationToken);
-            book.Tags.Add(new BookTagEntity { Book = book, Tag = tag });
-        }
-
-        foreach (var file in placement.Files)
-        {
-            book.Files.Add(new BookFileEntity
-            {
-                Book = book,
-                Format = file.Format,
-                ContentType = file.ContentType,
-                RelativePath = file.RelativePath,
-                SizeBytes = file.SizeBytes,
-                Sha256 = file.Sha256
-            });
-        }
-
-        await db.SaveChangesAsync(cancellationToken);
-        return book;
-    }
-
     private async Task<BookEntity?> FindExistingBookAsync(DownloadJobEntity job, CancellationToken cancellationToken)
     {
         if (job.BookId is { } bookId)
@@ -328,48 +257,6 @@ public sealed class DownloadRunner(
         // Same URL is the reliable signal before a download; source id only exists after
         // the plugin has told us one.
         return await db.Books.FirstOrDefaultAsync(book => book.SourceUrl == job.Url, cancellationToken);
-    }
-
-    private async Task<AuthorEntity> GetOrAddAuthorAsync(string name, CancellationToken cancellationToken)
-    {
-        var existing = await db.Authors.FirstOrDefaultAsync(author => author.Name == name, cancellationToken);
-
-        if (existing is not null)
-        {
-            return existing;
-        }
-
-        var author = new AuthorEntity { Name = name, SortName = Domain.Naming.sortAuthor(name) };
-        db.Authors.Add(author);
-        return author;
-    }
-
-    private async Task<TagEntity> GetOrAddTagAsync(string name, CancellationToken cancellationToken)
-    {
-        var existing = await db.Tags.FirstOrDefaultAsync(tag => tag.Name == name, cancellationToken);
-
-        if (existing is not null)
-        {
-            return existing;
-        }
-
-        var tag = new TagEntity { Name = name };
-        db.Tags.Add(tag);
-        return tag;
-    }
-
-    private async Task<SeriesEntity> GetOrAddSeriesAsync(string name, CancellationToken cancellationToken)
-    {
-        var existing = await db.Series.FirstOrDefaultAsync(series => series.Name == name, cancellationToken);
-
-        if (existing is not null)
-        {
-            return existing;
-        }
-
-        var series = new SeriesEntity { Name = name };
-        db.Series.Add(series);
-        return series;
     }
 
     private async Task FailAsync(DownloadJobEntity job, string code, string message, bool retryable)

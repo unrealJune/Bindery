@@ -36,8 +36,11 @@ data:
   Bindery__Downloads__MaxAttempts: {{ .Values.bindery.downloads.maxAttempts | quote }}
   Bindery__Downloads__RetryDelay: {{ .Values.bindery.downloads.retryDelay | quote }}
   Bindery__Downloads__IdleTimeout: {{ .Values.bindery.downloads.idleTimeout | quote }}
-  Bindery__Downloads__MaxArtifactBytes: {{ .Values.bindery.downloads.maxArtifactBytes | quote }}
+  # `int64` before `quote`: Helm renders a large plain number as "5.36870912e+08", which
+  # .NET's configuration binder will not parse back into a long.
+  Bindery__Downloads__MaxArtifactBytes: {{ .Values.bindery.downloads.maxArtifactBytes | int64 | quote }}
   Bindery__Downloads__HistoryLimit: {{ .Values.bindery.downloads.historyLimit | quote }}
+  Bindery__Uploads__MaxBytes: {{ .Values.bindery.uploads.maxBytes | int64 | quote }}
   {{- range $i, $plugin := .Values.plugins }}
   Bindery__Plugins__Registry__{{ $i }}__Name: {{ $plugin.name | quote }}
   Bindery__Plugins__Registry__{{ $i }}__Enabled: {{ $plugin.enabled | quote }}

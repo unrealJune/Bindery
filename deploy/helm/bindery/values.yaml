@@ -91,6 +91,12 @@ bindery:
     idleTimeout: 00:05:00
     maxArtifactBytes: 536870912
     historyLimit: 500
+
+  uploads:
+    # Largest file the "deposit a file" form accepts, in bytes. This also raises Kestrel's
+    # request-body ceiling, so an ingress in front of Bindery needs its own body limit
+    # raised to match or the upload is rejected before it ever reaches the pod.
+    maxBytes: 268435456
   plugins:
     tokenSecret:
       existingSecret: ""

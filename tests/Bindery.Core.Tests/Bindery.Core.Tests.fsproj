@@ -12,6 +12,7 @@
     <Compile Include="ProtocolTests.fs" />
     <Compile Include="RoutingTests.fs" />
     <Compile Include="DomainTests.fs" />
+    <Compile Include="EpubTests.fs" />
     <Compile Include="OpdsAtomTests.fs" />
     <Compile Include="OpdsJsonTests.fs" />
     <Compile Include="ReferenceFeedTests.fs" />

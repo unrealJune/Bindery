@@ -72,6 +72,12 @@ Plugin conformance (works against any plugin image, Bindery not required):
 python tests/conformance/run.py --base-url http://localhost:8080
 ```
 
+Hedgerow's chapter parser and store are stdlib-only and unit tested without the container:
+
+```bash
+cd plugins/hedgerow && python -m unittest discover -s tests -t .
+```
+
 ## Conventions
 
 - File-scoped namespaces, nullable enabled, `TreatWarningsAsErrors` off but keep it clean.

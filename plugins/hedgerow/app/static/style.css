@@ -11,6 +11,8 @@
   --hg-border: var(--bnd-border, #d9dde3);
   --hg-accent: var(--bnd-accent, #3b6ea5);
   --hg-radius: var(--bnd-radius, 8px);
+  --hg-danger: var(--bnd-danger, #a3231b);
+  --hg-danger-line: color-mix(in srgb, var(--hg-danger) 45%, transparent);
 }
 
 * { box-sizing: border-box; }
@@ -30,6 +32,7 @@ body.hg-dark {
   --hg-bg: var(--bnd-bg, #14171c);
   --hg-card: var(--bnd-surface, #1d222b);
   --hg-border: var(--bnd-border, #333b47);
+  --hg-danger: var(--bnd-danger, #ff6b60);
 }
 
 h1 { font-size: 1.3rem; margin: 0 0 var(--hg-gap); }
@@ -57,6 +60,32 @@ h2 { font-size: 1.05rem; margin: 0 0 8px; }
   cursor: pointer;
 }
 .hg-btn:hover { border-color: var(--hg-accent); }
+
+/* Destructive, and armed only after the first click. Outlined at rest so it never reads as
+   the panel's primary action; filled once armed so the second click is unmistakable. */
+.hg-btn-danger { color: var(--hg-danger); border-color: var(--hg-danger-line); }
+.hg-btn-danger:hover { border-color: var(--hg-danger); }
+
+.hg-btn-danger.armed {
+  background: var(--hg-danger);
+  border-color: var(--hg-danger);
+  color: var(--hg-bg);
+  font-weight: 600;
+}
+
+/* One tracked thing, with whatever can be done to it. */
+.hg-entry {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--hg-gap);
+  padding: var(--hg-gap) 0;
+  border-bottom: 1px solid var(--hg-border);
+}
+
+.hg-entry:last-child { border-bottom: 0; padding-bottom: 0; }
+.hg-entry > :first-child { min-width: 0; flex: 1; }
+.hg-entry p { margin: 0; }
 
 .hg-select, .hg-pin {
   font: inherit;

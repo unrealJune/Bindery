@@ -7,7 +7,9 @@ using Bindery.Host.Library;
 using Bindery.Host.Opds;
 using Bindery.Host.Plugins;
 using Bindery.Host.Security;
+using Bindery.Host.Ui;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 
@@ -66,7 +68,9 @@ builder.Services.AddSingleton<DownloadQueue>();
 builder.Services.AddScoped<CatalogService>();
 builder.Services.AddScoped<DownloadService>();
 builder.Services.AddScoped<DownloadRunner>();
+builder.Services.AddScoped<BookIndexer>();
 builder.Services.AddScoped<LibraryScanner>();
+builder.Services.AddScoped<LibraryWriter>();
 builder.Services.AddHostedService<DownloadWorker>();
 
 // ---------------------------------------------------------------- web
@@ -75,6 +79,7 @@ builder.Services.AddBinderyAuth(options);
 builder.Services.AddScoped<FeedTokenService>();
 builder.Services.AddSingleton<FragmentSanitizer>();
 builder.Services.AddScoped<PluginUiProxy>();
+builder.Services.AddSingleton<SourceLabels>();
 
 builder.Services.AddRazorPages(razor =>
 {
@@ -94,6 +99,15 @@ builder.Services.AddAntiforgery(antiforgery =>
 });
 
 builder.Services.AddResponseCompression();
+
+// An EPUB is bigger than Kestrel's 30 MB default allows once it carries art, and a limit
+// the server enforces below the configured one would only fail uploads confusingly.
+builder.WebHost.ConfigureKestrel(kestrel => kestrel.Limits.MaxRequestBodySize = options.Uploads.MaxBytes);
+builder.Services.Configure<FormOptions>(form =>
+{
+    form.MultipartBodyLengthLimit = options.Uploads.MaxBytes;
+    form.MultipartHeadersLengthLimit = 32 * 1024;
+});
 
 builder.Services.Configure<ForwardedHeadersOptions>(forwarded =>
 {

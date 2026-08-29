@@ -32,6 +32,8 @@ public sealed class BinderyOptions
 
     public DownloadOptions Downloads { get; set; } = new();
 
+    public UploadOptions Uploads { get; set; } = new();
+
     public PluginHostOptions Plugins { get; set; } = new();
 
     public SecurityOptions Security { get; set; } = new();
@@ -52,6 +54,21 @@ public sealed class SecurityOptions
     /// with nothing in the server log.
     /// </remarks>
     public IList<string> FormActionSources { get; set; } = new List<string>();
+}
+
+/// <summary>Filing a book by hand, rather than through a downloader.</summary>
+public sealed class UploadOptions
+{
+    /// <summary>
+    /// Largest file the upload form accepts.
+    /// </summary>
+    /// <remarks>
+    /// Also raises Kestrel's request body ceiling at boot, because a limit the server
+    /// rejects at 30 MB regardless of what is configured here would be a lie. Uploading is
+    /// behind the UI policy, so the people who can reach it are the people who own the
+    /// volume.
+    /// </remarks>
+    public long MaxBytes { get; set; } = 256L * 1024 * 1024;
 }
 
 public enum AuthMode

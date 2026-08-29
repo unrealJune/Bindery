@@ -69,13 +69,10 @@
                 <dt>Updated</dt>
                 <dd>@book.Updated.ToLocalTime().ToString("yyyy.MM.dd HH:mm")</dd>
             </div>
-            @if (book.SourcePlugin.HasValue())
-            {
-                <div>
-                    <dt>Acquired by</dt>
-                    <dd>@book.SourcePlugin.Value</dd>
-                </div>
-            }
+            <div>
+                <dt>Acquired by</dt>
+                <dd><span class="source-badge @(book.SourcePlugin.HasValue() ? null : "source-badge-manual")">@Model.SourceLabel</span></dd>
+            </div>
         </dl>
 
         @if (book.SourceUrl.HasValue())
@@ -113,6 +110,26 @@
                 </form>
             }
         </div>
+
+        @*
+            Withdrawal is two deliberate steps, not a dialog: the disclosure has to be opened
+            before the button that deletes exists. The page ships no JavaScript, and an
+            operator who opened a book to read it never sees a destructive control at rest.
+        *@
+        <details class="withdraw">
+            <summary>Withdraw from the volume</summary>
+            <p>
+                This deletes <strong>@book.Title</strong> and every file filed with it from the
+                library volume. The files are the library, so there is nothing to restore from
+                afterwards@(book.SourceUrl.HasValue() ? " — though the source can be filed again from Intake." : ".")
+            </p>
+            <form method="post" asp-page-handler="Delete" asp-route-id="@book.Id">
+                <button class="button button-danger" type="submit">
+                    <span>Delete permanently</span>
+                    <small>@(book.Files.AsList().Count) file(s) on disk</small>
+                </button>
+            </form>
+        </details>
     </div>
 </div>
 

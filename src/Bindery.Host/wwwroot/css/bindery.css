@@ -905,6 +905,23 @@ form > label {
     color: light-dark(#ffffff, #04141b);
 }
 
+/*
+    The one destructive button in the system. It is outlined rather than filled: a solid red
+    slab reads as the page's primary action, and this never is — it only ever appears inside
+    a disclosure the operator has already opened on purpose.
+*/
+.button-danger {
+    border-color: color-mix(in srgb, var(--err) 55%, transparent);
+    background: var(--err-wash);
+    color: var(--err);
+}
+
+.button-danger:hover {
+    border-color: var(--err);
+    background: color-mix(in srgb, var(--err) 16%, transparent);
+    color: var(--err);
+}
+
 .button:disabled,
 .button[aria-disabled="true"] {
     opacity: 0.5;
@@ -1157,6 +1174,50 @@ form > label {
 
 .intake-options > div { display: flex; flex-direction: column; gap: var(--s2); min-width: 0; }
 
+/* Two optional fields plus the button, where the URL form has one field plus the button. */
+.intake-options-wide { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; }
+
+/* The deposit form's heading is a divider inside the docket, not a second panel. */
+.docket-heading-split { margin-top: var(--s8); }
+
+/*
+    The file input keeps the browser's own button — it is the one control a page cannot
+    restyle without JavaScript, and the native one is what makes drag-and-drop and the
+    system file dialog work. Only its frame is brought into the system.
+*/
+.control-file {
+    padding: var(--s2) var(--s3);
+    font-size: 0.78rem;
+    line-height: 1.9;
+}
+
+.control-file::file-selector-button {
+    margin-right: var(--s4);
+    padding: var(--s2) var(--s4);
+    border: 1px solid var(--hairline-strong);
+    border-radius: var(--radius);
+    background: var(--panel);
+    color: var(--ink-strong);
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    transition: color var(--dur-hover) var(--ease), border-color var(--dur-hover) var(--ease);
+}
+
+.control-file::file-selector-button:hover {
+    color: var(--accent);
+    border-color: var(--accent-line);
+}
+
+.intake-form label small {
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+}
+
 .job-strip {
     list-style: none;
     margin: 0;
@@ -1213,7 +1274,7 @@ form > label {
 
 .book-row {
     display: grid;
-    grid-template-columns: 4.5rem minmax(0, 1fr) minmax(0, 12rem) 1.5rem;
+    grid-template-columns: 4.5rem minmax(0, 1fr) minmax(0, 9rem) minmax(0, 8rem) 1.5rem;
     align-items: center;
     gap: var(--s5);
     padding: var(--s4) var(--s3);
@@ -1265,6 +1326,38 @@ form > label {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.book-source { min-width: 0; justify-self: start; }
+
+/*
+    Which downloader filed a book. A hairline chip rather than a filled pill, because the
+    register's whole structure is rules and this is provenance, not status — it must read
+    as a note in the margin and never compete with the title.
+*/
+.source-badge {
+    display: inline-block;
+    max-width: 100%;
+    padding: 2px var(--s3);
+    border: 1px solid var(--accent-line);
+    border-radius: 999px;
+    background: var(--accent-wash);
+    color: var(--accent);
+    font-family: var(--font-mono);
+    font-size: 0.64rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: middle;
+}
+
+/* Nothing fetched it — uploaded, or found on the volume by a rescan. Stated, not accented. */
+.source-badge-manual {
+    border-color: var(--hairline-strong);
+    background: transparent;
+    color: var(--ink-muted);
 }
 
 /*
@@ -1578,6 +1671,41 @@ form > label {
 }
 
 .book-actions { display: flex; flex-wrap: wrap; gap: var(--s4); }
+
+/*
+    Withdrawal. Closed, it is a line of quiet text among the book's facts; open, it explains
+    what is about to be lost and only then offers the button. The two steps are the
+    confirmation — there is no dialog, because this page ships no JavaScript.
+*/
+.withdraw {
+    margin-top: var(--s8);
+    padding-top: var(--s5);
+    border-top: 1px solid var(--hairline);
+}
+
+.withdraw > summary {
+    cursor: pointer;
+    color: var(--ink-muted);
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    transition: color var(--dur-hover) var(--ease);
+}
+
+.withdraw > summary:hover { color: var(--err); }
+
+.withdraw > summary:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 3px;
+}
+
+.withdraw > p {
+    max-width: 60ch;
+    margin: var(--s5) 0;
+    color: var(--ink-body);
+    font-size: 0.86rem;
+}
 
 .file-table { display: flex; flex-direction: column; border-top: 1px solid var(--hairline); }
 
@@ -1933,7 +2061,8 @@ form > label {
         grid-template-areas:
             "seq arrow"
             "title arrow"
-            "meta arrow";
+            "meta arrow"
+            "source arrow";
         gap: var(--s1) var(--s4);
         padding: var(--s5) var(--s2);
     }
@@ -1941,6 +2070,7 @@ form > label {
     .book-sequence { grid-area: seq; }
     .book-title { grid-area: title; }
     .book-meta { grid-area: meta; }
+    .book-source { grid-area: source; margin-top: var(--s1); }
     .row-arrow { grid-area: arrow; align-self: center; }
 
     .file-row,
@@ -1953,7 +2083,8 @@ form > label {
     .token-row form,
     .token-revoked { justify-self: start; }
 
-    .intake-options { grid-template-columns: minmax(0, 1fr); }
+    .intake-options,
+    .intake-options-wide { grid-template-columns: minmax(0, 1fr); }
     .intake-options .button { width: 100%; align-items: center; }
 }
 

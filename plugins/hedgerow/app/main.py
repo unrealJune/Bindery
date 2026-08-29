@@ -56,6 +56,14 @@ async def lifespan(app: FastAPI):
         log.warning("BINDERY_PLUGIN_TOKEN is unset: accepting unauthenticated requests. "
                     "This is for local development only.")
     jobs.sweep_orphans()  # per-job scratch only; durable data/ is never swept
+
+    # Before anything can ingest: a parser change moves chapter keys, and the stored ones
+    # have to move with it or every chapter is re-ingested as a duplicate.
+    rewritten = store.reindex_chapters(merge.chapter_key, merge.parse_number,
+                                       version=merge.KEY_VERSION)
+    if rewritten:
+        log.info("reindexed %d chapter(s) onto parser keys v%s", rewritten, merge.KEY_VERSION)
+
     await bot.start_from_persisted()  # revives a previously configured bot; a no-op without one
     reaper = asyncio.create_task(jobs.reap_forever())
     try:
@@ -198,6 +206,8 @@ async def run_action(action: str, body: ActionRequest) -> dict:
         return _pending()
     if action == "rescan":
         return await _rescan(body)
+    if action == "forget":
+        return _forget(body)
     raise HTTPException(status_code=404, detail=f"no action named {action!r}")
 
 
@@ -443,6 +453,41 @@ async def _rescan(body: ActionRequest) -> dict:
         await jobs.discard(job.id)
 
 
+def _forget(body: ActionRequest) -> dict:
+    """Stop tracking a work: its chapters and any bound channel go with it.
+
+    Deliberately does not touch Bindery. A book already filed in the library is the
+    library's, and a plugin reaching back into it would be exactly the coupling the
+    protocol exists to prevent — re-filing the URL afterwards starts the work from scratch.
+    """
+    url = str(body.input.get("url") or "").strip()
+    work = _find_work(url)
+    if work is None:
+        return {"status": "error",
+                "error": {"code": "not_found",
+                          "message": "no tracked work has that URL",
+                          "retryable": False}}
+    chapters = len(store.list_chapters(work.id))
+    title = work.title or f"Work {work.id}"
+    store.delete_work(work.id)
+    return {"status": "ok", "output": {
+        "kind": "message", "level": "info",
+        "message": f"Forgot '{title}' and its {chapters} ingested chapter(s). "
+                   "Anything already filed in the library is untouched."}}
+
+
+def _find_work(url: str):
+    """The tracked work a URL names, without creating one."""
+    if not url:
+        return None
+    normalized = royalroad.normalize(url)
+    if royalroad.is_royalroad(url) or (normalized and "royalroad" in normalized[1]):
+        return store.find_work(source_url=normalized[0] if normalized else url)
+    if royalroad.is_hedgerow(url):
+        return store.find_work(hedgerow_url=url)
+    return None
+
+
 async def _apply_bot_config(config: Dict[str, Any]) -> None:
     """Let host-stored config drive the always-on bot. Absent keys leave the bot untouched."""
     if "discord_token" not in config and "discord_channels" not in config:
@@ -495,6 +540,12 @@ async def ui_post(path: str, request: Request) -> Response:
     if route == "api/reset":
         store.clear_overrides(int(payload["work"]))
         return _json({"ok": True})
+    if route == "api/work/delete":
+        return _json({"ok": store.delete_work(int(payload["work"]))})
+    if route == "api/binding/delete":
+        return _json({"ok": store.unbind_channel(str(payload["channel"]))})
+    if route == "api/chapter/delete":
+        return _json({"ok": store.delete_chapter(int(payload["work"]), int(payload["chapter"]))})
     raise HTTPException(status_code=404, detail="no such UI route")
 
 

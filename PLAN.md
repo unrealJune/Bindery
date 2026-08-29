@@ -304,6 +304,10 @@ Update scheduler (re-fetch for new chapters) · watch folder / bulk import · re
 sync · multi-user libraries · calibre-style metadata editing · full-text search ·
 plugin marketplace or registry.
 
+Depositing *one* file through the UI is in — it is the same filing path a download ends in,
+minus the plugin — and so is withdrawing a book. What stays out is the unattended half: a
+watched directory, a bulk import, and editing a filed book's metadata after the fact.
+
 The update scheduler is the strongest candidate for v1.1 — for ongoing fanfic it is
 arguably the point — but it needs per-book source tracking to be solid first, and that's
 what phase 3 builds.

@@ -25,6 +25,13 @@ jobs:
         run: helm lint deploy/helm/bindery
       - name: Helm template
         run: helm template bindery deploy/helm/bindery
+      # Hedgerow's chapter parser and store are stdlib-only by design, so they are unit
+      # tested here rather than only through the container. The parser is the piece two
+      # ingest paths have to agree on; a regression there silently duplicates chapters.
+      - name: Hedgerow unit tests
+        run: python -m unittest discover -s tests -t . --verbose
+        working-directory: plugins/hedgerow
+
       - name: Plugin conformance self-test
         run: python tests/conformance/run.py --self-test --no-color
 
