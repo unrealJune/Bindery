@@ -18,13 +18,14 @@ Two Discord specifics drive the shape of this file:
 from __future__ import annotations
 
 import asyncio
+import functools
 import logging
 import os
 import re
 import tempfile
 from typing import List, Optional, Set
 
-from . import epub, merge
+from . import epub, merge, royalroad
 from .store import DATA_DIR, SOURCE_DISCORD, Store
 
 log = logging.getLogger("bindery.hedgerow")
@@ -33,6 +34,25 @@ SETTING_TOKEN = "discord_token"
 SETTING_CHANNELS = "discord_channels"
 
 _RR_URL = re.compile(r"https?://(?:www\.)?royalroad\.com/fiction/\d+[^\s>]*", re.I)
+
+
+@functools.lru_cache(maxsize=256)
+def _work_url(url: str) -> str:
+    """Key a work the way the download path keys it.
+
+    `main._resolve_work` always runs a Royal Road URL through `royalroad.normalize` before
+    `get_or_create_work`, and that lookup matches on exact string equality. A URL as pasted
+    into Discord — bare `http://`, no `www.`, a trailing slug or none — is a different
+    string from the normalized one, so keying works off the raw text would bind the channel
+    to a work that no download or rescan can ever reach: Discord chapters would collect on
+    one work and Royal Road chapters on its twin, and the merge this plugin exists to do
+    would never happen. Normalizing on both sides is what keeps them the same work.
+
+    Cached because `normalize` loads FanFicFare's adapter table, which is far too heavy to
+    repeat for every message in a chatty channel.
+    """
+    normalized = royalroad.normalize(url)
+    return normalized[0] if normalized else url
 
 
 class BotManager:
@@ -140,7 +160,7 @@ class BotManager:
         # A posted Royal Road fiction URL (re)binds this channel's current work.
         match = _RR_URL.search(message.content or "")
         if match:
-            work = self._store.get_or_create_work(source_url=match.group(0))
+            work = self._store.get_or_create_work(source_url=_work_url(match.group(0)))
             self._store.bind_channel(channel_id, work.id)
             log.info("channel %s bound to work %s", channel_id, work.id)
 
