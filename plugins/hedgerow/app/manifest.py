@@ -126,6 +126,10 @@ def build_manifest() -> dict:
             "metadata": True,
             "cover": True,
             "cancel": True,
+            # Protocol 3.7. Discord delivers chapters whenever the author posts, which no
+            # amount of polling can predict, so this is the one plugin that genuinely has
+            # something to say between requests.
+            "notify": True,
         },
         "config": CONFIG,
         "actions": ACTIONS,

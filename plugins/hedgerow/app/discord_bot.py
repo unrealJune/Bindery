@@ -63,8 +63,9 @@ class BotManager:
     token tears the old client down and starts a fresh one; clearing it stops the bot.
     """
 
-    def __init__(self, store: Store):
+    def __init__(self, store: Store, notifier=None):
         self._store = store
+        self._notifier = notifier
         self._token: Optional[str] = None
         self._channels: Set[str] = set()
         self._task: Optional[asyncio.Task] = None
@@ -168,10 +169,7 @@ class BotManager:
         if not attachments:
             return
 
-        work_id = self._store.work_for_channel(channel_id)
-        if work_id is None:
-            log.info("channel %s has EPUBs but no bound work; ignoring until a URL is posted", channel_id)
-            return
+        bound_id = self._store.work_for_channel(channel_id)
 
         ts = _timestamp(message)
         for attachment in attachments:
@@ -182,6 +180,20 @@ class BotManager:
             except Exception as exc:
                 log.warning("could not read attachment: %s", type(exc).__name__)
                 continue
+
+            work_id = bound_id
+            if work_id is None:
+                # Nothing bound yet. The EPUB may still name its own source, in which case
+                # it can be associated without anyone posting a URL. Only an explicit claim
+                # counts — see epub.read_source_url — so a file that says nothing about
+                # itself is still ignored rather than guessed at.
+                work_id = self._associate(channel_id, data)
+                if work_id is None:
+                    log.info("channel %s has an EPUB naming no source and no bound work; ignoring",
+                             channel_id)
+                    continue
+                bound_id = work_id
+
             self._ingest_epub(work_id, data, ts)
 
     def _ingest_epub(self, work_id: int, data: bytes, discord_ts: float) -> None:
@@ -208,6 +220,36 @@ class BotManager:
                 os.unlink(path)
         if added:
             log.info("ingested %d new chapter(s) from a Discord EPUB into work %s", added, work_id)
+            # The host cannot have known this arrived, so tell it (protocol 3.7). Debounced
+            # and best-effort: if it never lands, the update schedule still gets there.
+            work = self._store.get_work(work_id)
+            url = (work.source_url or work.hedgerow_url) if work else None
+            if url and self._notifier is not None:
+                self._notifier.schedule(url, reason=f"{added} new chapter(s) from Discord")
+
+    def _associate(self, channel_id: str, data: bytes) -> Optional[int]:
+        """Bind a channel from an EPUB that names its own source. None if it names none."""
+        tmp_dir = os.path.join(DATA_DIR, "incoming")
+        os.makedirs(tmp_dir, exist_ok=True)
+        with tempfile.NamedTemporaryFile(dir=tmp_dir, suffix=".epub", delete=False) as handle:
+            handle.write(data)
+            path = handle.name
+        try:
+            claimed = epub.read_source_url(path)
+        finally:
+            with _suppress():
+                os.unlink(path)
+
+        if not claimed or not royalroad.claims(claimed):
+            return None
+
+        # Keyed exactly as the download path keys it, for the same reason the posted-URL
+        # path is: a work the scrape cannot reach is a work that never merges.
+        work = self._store.get_or_create_work(source_url=_work_url(claimed))
+        self._store.bind_channel(channel_id, work.id)
+        log.info("channel %s auto-bound to work %s from an EPUB naming %s",
+                 channel_id, work.id, claimed)
+        return work.id
 
     # ------------------------------------------------------------ introspection
 

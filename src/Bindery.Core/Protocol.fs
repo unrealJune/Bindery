@@ -118,14 +118,19 @@ type Capabilities =
       Update: bool
       Metadata: bool
       Cover: bool
-      Cancel: bool }
+      Cancel: bool
+      /// The plugin may POST a change hint to Bindery (protocol 3.7). Opt-in: a plugin
+      /// that never sets it is simply polled, which is the behaviour every plugin had
+      /// before the capability existed.
+      Notify: bool }
 
     static member Default =
         { Probe = false
           Update = false
           Metadata = false
           Cover = false
-          Cancel = true }
+          Cancel = true
+          Notify = false }
 
 type ItemAction =
     | DownloadItem
@@ -388,7 +393,8 @@ module private Parse =
               Update = Json.boolOr false "update" caps
               Metadata = Json.boolOr false "metadata" caps
               Cover = Json.boolOr false "cover" caps
-              Cancel = Json.boolOr true "cancel" caps }
+              Cancel = Json.boolOr true "cancel" caps
+              Notify = Json.boolOr false "notify" caps }
 
     /// A UI path is only accepted if it is rooted and cannot climb out of the plugin's
     /// mount point. A bad one is dropped rather than corrected.

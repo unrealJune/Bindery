@@ -165,7 +165,8 @@ Everything that was true of this tier is still true, in roughly the order it bre
 
 - Don't add a NuGet dependency without a reason worth stating in the PR.
 - Don't add a Node/npm build step. The UI is server-rendered on purpose; htmx is vendored.
-- Don't implement the update scheduler, watch folder, or read-progress sync yet — see
-  `PLAN.md` §10. They're deferred deliberately, not forgotten.
+- Don't implement the watch folder or read-progress sync yet — see `PLAN.md` §10. They're
+  deferred deliberately, not forgotten. (The update scheduler *is* built now:
+  `Downloads/UpdateScheduler.cs` plus the plugin-initiated hint of protocol §3.7.)
 - Don't make the host aware of any specific plugin. There must be no `if (plugin ==
   "fanficfare")` anywhere in `src/`.

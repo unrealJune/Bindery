@@ -65,11 +65,16 @@ The mechanism does not change between `mode: sidecar` (localhost) and `mode: ser
 | `X-Bindery-Job-Id` | `download`, artifact, cancel | The job this request belongs to |
 | `X-Bindery-Base` | UI requests | Public path prefix the plugin's UI is mounted at (§6) |
 | `X-Bindery-Csrf` | UI requests | Opaque; a plugin **MUST NOT** need to interpret it |
+| `X-Bindery-Notify` | every `/bindery/v1` request | Absolute URL for change notifications (§3.7). Absent when the host accepts none |
+| `X-Bindery-Notify-Token` | every `/bindery/v1` request | Bearer token for that URL. **MUST NOT** be logged |
 | `User-Agent` | every request | `Bindery/<version>` |
 
 ---
 
 ## 3. Endpoints
+
+Everything in this table is served by the **plugin** and called by Bindery. The single
+exception is §3.7, which Bindery serves and the plugin calls.
 
 | Method | Path | Required |
 |---|---|---|
@@ -81,6 +86,7 @@ The mechanism does not change between `mode: sidecar` (localhost) and `mode: ser
 | `DELETE` | `/bindery/v1/jobs/{jobId}` | yes |
 | `POST` | `/bindery/v1/actions/{action}` | no — see `actions` (§5) |
 | `GET`/`POST` | `/bindery/v1/ui/{*path}` | no — only for `ui.mode` `sandboxed` or `fragment` (§6) |
+| `POST` | `{notifyUrl}` — *served by Bindery* | no — see `capabilities.notify` (§3.7) |
 
 ### 3.1 `GET /healthz`
 
@@ -113,7 +119,8 @@ for the lifetime of the process; Bindery caches it and refreshes on a configurab
     "update": true,
     "metadata": true,
     "cover": true,
-    "cancel": true
+    "cancel": true,
+    "notify": false
   },
   "config": [ /* section 4 */ ],
   "actions": [ /* section 5 */ ],
@@ -324,6 +331,69 @@ idempotent — deleting an unknown or already-deleted job is `204`, not `404`.
 
 The host calls this after it has fetched every artifact it wants. A plugin **MUST** also
 expire artifacts on its own so that a host crash does not leak disk forever.
+
+### 3.7 `POST {notifyUrl}` — change notification
+
+The one endpoint in this protocol that **Bindery** serves and a **plugin** calls. Every
+other exchange is host-pull; this inverts it, so its scope is deliberately tiny.
+
+A plugin that learns about new content out-of-band — a chat bot receiving a file, a webhook,
+anything not driven by a Bindery request — has no way to say so. It can only wait to be
+polled. This endpoint lets it raise a hand. It carries **no content**: it names a source and
+says "worth re-fetching". Bindery decides whether, and when, to act.
+
+**Discovery.** Bindery advertises the endpoint on every `/bindery/v1` request via the
+headers in §2.2:
+
+| Header | Meaning |
+|---|---|
+| `X-Bindery-Notify` | Absolute URL to POST to |
+| `X-Bindery-Notify-Token` | Bearer token to authenticate with |
+
+Both are absent when the host does not accept notifications. A plugin **MAY** persist the
+most recent pair so it can notify outside a request (this is the whole point — a bot is not
+serving a request when a file arrives), and **MUST** tolerate their absence by doing nothing
+extra. A plugin **MUST NOT** log the token.
+
+**Request.**
+
+```jsonc
+POST /bindery/v1/notify
+Authorization: Bearer <X-Bindery-Notify-Token>
+Content-Type: application/json
+
+{
+  "plugin": "hedgerow",
+  "sourceUrl": "https://www.royalroad.com/fiction/140087",
+  "reason": "new-chapters"
+}
+```
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `plugin` | string | yes | The notifying plugin's `name`. **MUST** match the token's plugin. |
+| `sourceUrl` | string | yes | Identifies the affected book, compared against `Book.sourceUrl`. **SHOULD** be the same normalized form the plugin returns in download metadata. |
+| `reason` | string | no | Free-form, for logs. Not interpreted. |
+
+**Responses.** `202` accepted (an update was queued). `200` with `{"accepted": false,
+"reason": "..."}` when understood but not acted on — unknown source, a job already running,
+or debounced; this is **not** an error. `401` bad token. `429` rate-limited.
+
+**It is a hint, never a command.** Bindery **MAY** coalesce, defer, rate-limit, or ignore
+any notification, and a plugin **MUST NOT** depend on one being honoured. The host's own
+update schedule is the backstop that makes this endpoint an optimization rather than a
+correctness requirement — if every notification were dropped, books would still converge on
+the next scheduled pass, just later.
+
+**Host obligations.** Bindery **MUST** issue a distinct token per plugin, compare it in
+constant time, and resolve the caller's identity from the *token* — never from the `plugin`
+field, which is a claim to be checked against it, not trusted. It **MUST** only act on books
+whose `sourcePlugin` is that plugin, so a compromised plugin cannot drive refreshes of books
+it does not own. It **MUST** rate-limit per plugin and debounce per book.
+
+**Plugin obligations.** A plugin **SHOULD** debounce — one notification after a burst of
+arrivals, not one per file — and **MUST** treat any failure as routine: no retry storm, no
+blocking the work that triggered it. Declared by `capabilities.notify`.
 
 ---
 
@@ -539,4 +609,5 @@ not a framework, not a base image.
 | Version | Change |
 |---|---|
 | 1 | Initial contract. |
+| 1 (additive) | `capabilities.notify` and §3.7 added — a plugin that learns of new content out-of-band may POST a contentless hint to Bindery, which decides whether to queue an update. No version bump: the capability defaults to `false`, the advertising headers are optional, and a host that serves no endpoint simply omits them. The host's update schedule remains the backstop, so the feature is an optimization and never a correctness requirement. |
 | 1 (additive) | `ui.mode: "sandboxed"` added — a full document in an opaque-origin iframe, plugin JavaScript permitted, host communication via the `postMessage` bridge. `fragment` deprecated but unchanged. `iframe` becomes a deprecated alias for `sandboxed`. No version bump: unknown `ui.mode` values already degrade to `declarative`. |

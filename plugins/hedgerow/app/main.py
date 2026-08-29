@@ -23,7 +23,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from . import epub, merge, royalroad, ui
+from . import epub, merge, notify, royalroad, ui
 from .discord_bot import BotManager, _split_channels
 from .jobs import JobStore
 from .manifest import VERSION, build_manifest
@@ -44,7 +44,8 @@ STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
 store = Store()
 jobs = JobStore()
-bot = BotManager(store)
+notifier = notify.Notifier(store)
+bot = BotManager(store, notifier)
 
 
 # ---------------------------------------------------------------- app
@@ -83,6 +84,21 @@ app = FastAPI(
     redoc_url=None,
     openapi_url=None,
 )
+
+
+@app.middleware("http")
+async def learn_notify_endpoint(request: Request, call_next):
+    """Pick up the change-notification endpoint Bindery advertises (protocol 3.7).
+
+    Read from every request because the bot needs it at a moment when no request is in
+    flight, and because a host restart mints a fresh token — re-reading is what keeps the
+    plugin current without any handshake. Absent headers mean the host accepts no
+    notifications, which is simply the pre-3.7 behaviour and needs no handling.
+    """
+    with contextlib.suppress(Exception):
+        notifier.remember(request.headers.get("x-bindery-notify"),
+                          request.headers.get("x-bindery-notify-token"))
+    return await call_next(request)
 
 
 def error_body(code: str, message: str, retryable: bool = False) -> dict:

@@ -32,6 +32,8 @@ public sealed class BinderyOptions
 
     public DownloadOptions Downloads { get; set; } = new();
 
+    public UpdateOptions Updates { get; set; } = new();
+
     public UploadOptions Uploads { get; set; } = new();
 
     public PluginHostOptions Plugins { get; set; } = new();
@@ -133,6 +135,53 @@ public sealed class DownloadOptions
 
     /// <summary>Job rows kept after completion, oldest pruned first.</summary>
     public int HistoryLimit { get; set; } = 500;
+}
+
+/// <summary>
+/// The unattended half of keeping a book current: re-fetching it when the source moves.
+/// </summary>
+/// <remarks>
+/// PLAN.md §10 deferred this to v1.1 pending per-book source tracking. That tracking now
+/// exists — every book carries SourceUrl and SourcePlugin — so the scheduler is a loop over
+/// it rather than new state. Nothing here writes a schema: "when was this last checked" is
+/// derived from the Jobs table, which already records BookId and CreatedAt.
+/// </remarks>
+public sealed class UpdateOptions
+{
+    /// <summary>Whether books are re-checked without being asked.</summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>
+    /// How stale a book's last check may get before it is due again. This is per book, not
+    /// a global cadence: the sweep runs far more often and simply picks up whatever has
+    /// aged past this.
+    /// </summary>
+    public TimeSpan Interval { get; set; } = TimeSpan.FromHours(6);
+
+    /// <summary>How often to look for due books. Cheap: one indexed query.</summary>
+    public TimeSpan SweepInterval { get; set; } = TimeSpan.FromMinutes(15);
+
+    /// <summary>
+    /// Books queued per sweep. A ceiling rather than a target — it keeps a library that has
+    /// been offline for a week from enqueueing every book at once and hammering one site.
+    /// </summary>
+    public int MaxPerSweep { get; set; } = 4;
+
+    /// <summary>
+    /// Smallest gap between two notification-driven updates of the same book (§3.7). A
+    /// plugin ingesting a burst of files should debounce on its side too; this is the
+    /// backstop for when it does not.
+    /// </summary>
+    public TimeSpan NotifyDebounce { get; set; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>
+    /// Absolute URL advertised to plugins as the notification endpoint. Defaults to
+    /// loopback because plugins run as sidecars sharing the pod's network namespace: the
+    /// call never leaves the pod, so it needs no TLS, no ingress rule, and no exposure of
+    /// this endpoint to the internet. A `service`-mode plugin on another host needs this
+    /// set to a reachable absolute URL.
+    /// </summary>
+    public string NotifyUrl { get; set; } = "http://127.0.0.1:8080/bindery/v1/notify";
 }
 
 public sealed class PluginHostOptions

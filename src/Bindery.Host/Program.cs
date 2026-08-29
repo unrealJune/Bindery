@@ -53,6 +53,7 @@ builder.Services.AddHttpClient(PluginClient.StreamClient, http =>
     http.DefaultRequestHeaders.UserAgent.ParseAdd($"Bindery/{ThisAssembly.Version}");
 });
 
+builder.Services.AddSingleton<PluginNotifyTokens>();
 builder.Services.AddSingleton<PluginClient>();
 builder.Services.AddSingleton<PluginRegistry>();
 builder.Services.AddSingleton<PluginResolver>();
@@ -72,6 +73,7 @@ builder.Services.AddScoped<BookIndexer>();
 builder.Services.AddScoped<LibraryScanner>();
 builder.Services.AddScoped<LibraryWriter>();
 builder.Services.AddHostedService<DownloadWorker>();
+builder.Services.AddHostedService<UpdateScheduler>();
 
 // ---------------------------------------------------------------- web
 
@@ -139,6 +141,7 @@ app.UseAuthorization();
 app.MapRazorPages();
 app.MapOpds();
 app.MapApi();
+app.MapPluginNotify();
 app.MapPluginUi();
 
 app.MapGet("/healthz", () => Results.Json(new { status = "ok", version = ThisAssembly.Version }))

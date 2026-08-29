@@ -25,6 +25,7 @@ public sealed record FetchedArtifact(string TempPath, long SizeBytes, string Sha
 public sealed class PluginClient(
     IHttpClientFactory factory,
     IOptions<BinderyOptions> options,
+    PluginNotifyTokens notifyTokens,
     ILogger<PluginClient> logger)
 {
     public const string RequestClient = "bindery-plugin";
@@ -34,6 +35,7 @@ public sealed class PluginClient(
     private const int MaxNdjsonLineBytes = 64 * 1024;
 
     private readonly PluginHostOptions _options = options.Value.Plugins;
+    private readonly UpdateOptions _updates = options.Value.Updates;
 
     // ------------------------------------------------------------ manifest
 
@@ -382,6 +384,19 @@ public sealed class PluginClient(
         if (!string.IsNullOrEmpty(token))
         {
             client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        }
+
+        // Protocol 3.7. Advertised on every request rather than handed over once, because a
+        // plugin holds no durable relationship with a particular host process: a restart
+        // mints a new token, and the next request is what tells the plugin about it. Both
+        // headers are omitted when the scheduler is off, which is how a plugin learns the
+        // host accepts no notifications.
+        if (_updates.Enabled && !string.IsNullOrWhiteSpace(_updates.NotifyUrl))
+        {
+            client.DefaultRequestHeaders.Remove("X-Bindery-Notify");
+            client.DefaultRequestHeaders.Remove("X-Bindery-Notify-Token");
+            client.DefaultRequestHeaders.Add("X-Bindery-Notify", _updates.NotifyUrl);
+            client.DefaultRequestHeaders.Add("X-Bindery-Notify-Token", notifyTokens.For(entry.Name));
         }
 
         return client;

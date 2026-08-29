@@ -40,6 +40,12 @@ data:
   # .NET's configuration binder will not parse back into a long.
   Bindery__Downloads__MaxArtifactBytes: {{ .Values.bindery.downloads.maxArtifactBytes | int64 | quote }}
   Bindery__Downloads__HistoryLimit: {{ .Values.bindery.downloads.historyLimit | quote }}
+  Bindery__Updates__Enabled: {{ .Values.bindery.updates.enabled | quote }}
+  Bindery__Updates__Interval: {{ .Values.bindery.updates.interval | quote }}
+  Bindery__Updates__SweepInterval: {{ .Values.bindery.updates.sweepInterval | quote }}
+  Bindery__Updates__MaxPerSweep: {{ .Values.bindery.updates.maxPerSweep | quote }}
+  Bindery__Updates__NotifyDebounce: {{ .Values.bindery.updates.notifyDebounce | quote }}
+  Bindery__Updates__NotifyUrl: {{ .Values.bindery.updates.notifyUrl | quote }}
   Bindery__Uploads__MaxBytes: {{ .Values.bindery.uploads.maxBytes | int64 | quote }}
   {{- range $i, $plugin := .Values.plugins }}
   Bindery__Plugins__Registry__{{ $i }}__Name: {{ $plugin.name | quote }}

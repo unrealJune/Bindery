@@ -92,6 +92,25 @@ bindery:
     maxArtifactBytes: 536870912
     historyLimit: 500
 
+  updates:
+    # Re-check filed books for new chapters without being asked. Every book with a source
+    # URL is eligible, whichever plugin filed it.
+    enabled: true
+    # How stale one book's last check may get before it is due again — per book, not a
+    # global cadence.
+    interval: 06:00:00
+    # How often to look for due books. Cheap; it is one indexed query.
+    sweepInterval: 00:15:00
+    # Ceiling per sweep, so a library that has been offline does not queue everything at
+    # once and hammer a single site.
+    maxPerSweep: 4
+    # Smallest gap between two notification-driven updates of one book (protocol 3.7).
+    notifyDebounce: 00:05:00
+    # Where plugins send change notifications. Loopback because plugins run as sidecars in
+    # this pod: the call never leaves the pod, so the endpoint needs no ingress rule and is
+    # not reachable from outside. A `service`-mode plugin elsewhere needs a routable URL.
+    notifyUrl: http://127.0.0.1:8080/bindery/v1/notify
+
   uploads:
     # Largest file the "deposit a file" form accepts, in bytes. This also raises Kestrel's
     # request-body ceiling, so an ingress in front of Bindery needs its own body limit

@@ -79,7 +79,13 @@ With no token, the bot stays dormant and the plugin still works for Royal Road.
 ## Reconciliation rules
 
 - **Binding.** A Royal Road fiction URL posted in a watched channel sets that channel's
-  *current work*. EPUB attachments posted afterward attach to it.
+  *current work*. EPUB attachments posted afterward attach to it. The URL is normalized the
+  same way the download path normalizes it, so a bare `http://royalroad.com/fiction/123`
+  and the canonical form are one work, not two.
+- **Binding without a URL.** If an EPUB arrives in a channel with nothing bound, and the
+  file *names its own source* — `dc:source`, or a `dc:identifier` that is a URL — the work
+  is created and bound from that, no posted URL needed. A file that claims nothing is still
+  ignored: a title is not an identity, and two serials sharing one would merge silently.
 - **Forwarded messages.** Both `message.attachments` and every
   `message_snapshots[*].attachments` are checked — forwarded advance copies live only in the
   snapshots.
@@ -116,6 +122,18 @@ With no token, the bot stays dormant and the plugin still works for Royal Road.
 
 `unchanged` is deliberately never claimed on an update: a forwarded EPUB can add chapters
 even when the Royal Road side has not moved, so every run rebuilds the merged book.
+
+## Telling Bindery something arrived
+
+Discord delivers chapters whenever the author posts, which no polling interval can predict.
+So after ingesting, the plugin POSTs a contentless hint to Bindery (protocol §3.7) naming
+the source that moved; Bindery decides whether to queue an update. The endpoint and its
+token are read from the `X-Bindery-Notify*` headers on requests Bindery makes and persisted,
+because the bot is not serving a request when a file arrives.
+
+It is debounced — a forwarded batch is one call — and entirely best-effort. Bindery's own
+update schedule is the backstop, so a hint that never lands costs latency, never
+correctness. That is why nothing here retries.
 
 ## The actions
 
