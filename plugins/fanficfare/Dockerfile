@@ -5,7 +5,7 @@
 # Updating FanFicFare, which you will do often, is a rebuild of this image and a tag bump
 # in values.yaml.
 
-FROM python:3.12-slim AS base
+FROM python:3.14-slim AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
