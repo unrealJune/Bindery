@@ -2,7 +2,7 @@
 #
 # Bindery is the host only. Downloader stacks live in plugin images, never here.
 
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS restore
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS restore
 WORKDIR /src
 
 COPY NuGet.config Directory.Build.props ./
