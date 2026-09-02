@@ -20,17 +20,62 @@ namespace Bindery.Host.Opds;
 /// </remarks>
 public static class OpdsEndpoints
 {
+    /// <summary>
+    /// Lets every <c>GET</c> in the group answer <c>HEAD</c> as well.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Ereaders probe a feed with <c>HEAD</c> before fetching it — KOReader's built-in
+    /// browser and <c>opds_plus.koplugin</c> both do, to read <c>Last-Modified</c> for
+    /// their catalog cache. Routing does not fall back from <c>HEAD</c> to <c>GET</c>, so
+    /// without this the probe is answered <c>405</c>.
+    /// </para>
+    /// <para>
+    /// A client degrades gracefully from that — no <c>Last-Modified</c> means it fetches
+    /// anyway — but the method rejection happens in the matcher, <em>before</em>
+    /// authorization runs. On a catalog reachable from outside the tailnet that is a
+    /// response served to an unauthenticated stranger, confirming the path and its verb.
+    /// Answering the method instead puts every response on this prefix behind
+    /// <see cref="AuthPolicies.ReadCatalog"/>, which is the property worth having.
+    /// Kestrel drops the body from a <c>HEAD</c> response on its own.
+    /// </para>
+    /// </remarks>
+    private static TBuilder AlsoAnswerHead<TBuilder>(this TBuilder builder)
+        where TBuilder : IEndpointConventionBuilder
+    {
+        // Finally, not Add: the verbs come from the MapGet call itself, and this has to see
+        // the metadata as it finally stands rather than as it is part-way through being
+        // assembled. The matcher reads the last HttpMethodMetadata, so appending wins.
+        builder.Finally(endpoint =>
+        {
+            var methods = endpoint.Metadata.OfType<HttpMethodMetadata>().LastOrDefault();
+
+            if (methods is null
+                || !methods.HttpMethods.Contains(HttpMethods.Get)
+                || methods.HttpMethods.Contains(HttpMethods.Head))
+            {
+                return;
+            }
+
+            endpoint.Metadata.Add(new HttpMethodMetadata([.. methods.HttpMethods, HttpMethods.Head]));
+        });
+
+        return builder;
+    }
+
     public static IEndpointRouteBuilder MapOpds(this IEndpointRouteBuilder builder)
     {
         // OPDS 1.2 — what ereaders actually implement.
         var atom = builder.MapGroup(OpdsUrls.AtomPrefix)
             .RequireAuthorization(AuthPolicies.ReadCatalog)
+            .AlsoAnswerHead()
             .WithTags("OPDS");
 
         // OPDS 2.0 — where things are going. Mapped first so "/opds/v2" is not swallowed
         // by the 1.2 group's routes.
         var json = builder.MapGroup(OpdsUrls.JsonPrefix)
             .RequireAuthorization(AuthPolicies.ReadCatalog)
+            .AlsoAnswerHead()
             .WithTags("OPDS 2.0");
 
         MapTree(atom, OpdsUrls.Atom, json: false);

@@ -13,6 +13,13 @@ serviceAccount:
   create: true
   annotations: {}
   name: ""
+  # Bindery never calls the Kubernetes API, and neither does any plugin: the whole
+  # protocol is HTTP between the host and a container it was told the address of.
+  # Mounting a token would hand a compromised process a cluster credential it has no
+  # use for, which is the one thing standing between "someone owns the catalog" and
+  # "someone owns the namespace". Set both on the ServiceAccount and on every pod
+  # spec, because the pod-level field is the one that actually wins.
+  automountToken: false
 
 podAnnotations: {}
 podLabels: {}

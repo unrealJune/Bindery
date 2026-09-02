@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using System.Text.Encodings.Web;
 using Bindery.Host.Configuration;
+using Bindery.Host.Opds;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
@@ -92,6 +93,43 @@ public static class AuthSetup
                 cookie.SlidingExpiration = true;
                 cookie.LoginPath = "/signin";
                 cookie.AccessDeniedPath = "/denied";
+
+                // The catalog must fail as a catalog. `ReadCatalog` lists this scheme and
+                // FeedToken, and an unsatisfied policy challenges every scheme it lists —
+                // so without this, an OPDS request with no credentials gets the cookie
+                // handler's 302 to /signin.
+                //
+                // That is not a cosmetic difference. Ereaders reach the catalog through
+                // LuaSocket (KOReader's built-in browser and opds_plus.koplugin both), and
+                // LuaSocket follows redirects up to five deep while *dropping* `user` and
+                // `password` on each hop — `tredirect` rebuilds the request without them.
+                // So the redirect is followed, the sign-in page comes back 200 with
+                // text/html, and the client reports a parse failure rather than "add a
+                // username and password". Letting FeedToken's 401 + WWW-Authenticate stand
+                // is what turns a silent mis-parse into a login prompt.
+                cookie.Events.OnRedirectToLogin = context =>
+                {
+                    if (IsCatalogRequest(context.Request))
+                    {
+                        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                        return Task.CompletedTask;
+                    }
+
+                    context.Response.Redirect(context.RedirectUri);
+                    return Task.CompletedTask;
+                };
+
+                cookie.Events.OnRedirectToAccessDenied = context =>
+                {
+                    if (IsCatalogRequest(context.Request))
+                    {
+                        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                        return Task.CompletedTask;
+                    }
+
+                    context.Response.Redirect(context.RedirectUri);
+                    return Task.CompletedTask;
+                };
             })
             .AddCookie(FrameSchemeName, cookie =>
             {
@@ -192,6 +230,18 @@ public static class AuthSetup
 
         return services;
     }
+
+    /// <summary>
+    /// Whether this request is for the catalog rather than the web interface.
+    /// </summary>
+    /// <remarks>
+    /// Keyed on the path because a cookie event only ever sees the request, not the policy
+    /// that rejected it. <see cref="OpdsUrls.AtomPrefix"/> is the prefix both OPDS trees
+    /// live under — 2.0 is nested beneath it — so one check covers feeds, downloads,
+    /// covers, and the OpenSearch descriptor alike.
+    /// </remarks>
+    private static bool IsCatalogRequest(HttpRequest request) =>
+        request.Path.StartsWithSegments(OpdsUrls.AtomPrefix);
 
     private static bool IsAllowed(ClaimsPrincipal principal, AuthOptions auth)
     {
