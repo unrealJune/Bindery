@@ -3,5 +3,5 @@
 # absorb. Bumping it is a plugin image rebuild, never a Bindery rebuild.
 FanFicFare==4.60.0
 fastapi==0.141.1
-uvicorn[standard]==0.52.4
+uvicorn[standard]==0.53.0
 python-multipart==0.0.32
