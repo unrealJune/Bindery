@@ -6,6 +6,6 @@ discord.py==2.7.1
 # discord.py imports `audioop`, which PEP 594 removed in Python 3.13. The image pins 3.12 so
 # this is inert there — it is here so that bumping the base image does not break the bot.
 audioop-lts>=0.2.1; python_version >= "3.13"
-fastapi==0.141.1
-uvicorn[standard]==0.52.4
+fastapi==0.142.2
+uvicorn[standard]==0.54.0
 python-multipart==0.0.32
