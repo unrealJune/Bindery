@@ -1,11 +1,14 @@
+using System.Security.Claims;
 using Bindery.Core;
 using Bindery.Host.Catalog;
 using Bindery.Host.Configuration;
+using Bindery.Host.Data;
 using Bindery.Host.Library;
 using Bindery.Host.Security;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using Microsoft.FSharp.Core;
+using System.Text.Json.Serialization;
 using CoreOpds = Bindery.Core.Opds;
 
 namespace Bindery.Host.Opds;
@@ -99,6 +102,21 @@ public static class OpdsEndpoints
             ImageAsync(id, catalog, library, ct));
         atom.MapGet("/thumb/{id:guid}", (Guid id, CatalogService catalog, LibraryStore library, CancellationToken ct) =>
             ImageAsync(id, catalog, library, ct));
+
+        // Reading positions. Kosync-shaped bodies (snake_case, `document` either the URN
+        // the feed emits or the bare book id) so the reader-side client stays dumb.
+        atom.MapPut("/syncs/progress", async (
+            ProgressPayload payload,
+            ClaimsPrincipal user,
+            ReadProgressService progress,
+            CancellationToken ct) =>
+            await ProgressPutAsync(payload, user, progress, ct));
+        atom.MapGet("/syncs/progress/{document}", async (
+            string document,
+            ClaimsPrincipal user,
+            ReadProgressService progress,
+            CancellationToken ct) =>
+            await ProgressGetAsync(document, user, progress, ct));
 
         return builder;
     }
@@ -419,5 +437,102 @@ public static class OpdsEndpoints
             lastModified: info.LastWriteTimeUtc,
             entityTag: null,
             enableRangeProcessing: false);
+    }
+
+    // ------------------------------------------------------------ reading progress
+
+    /// <summary>What a reader PUTs. Kosync-shaped; snake_case names are what its client sends.</summary>
+    /// <remarks>
+    /// Every property carries an explicit <see cref="JsonPropertyNameAttribute"/> because
+    /// ASP.NET Core's default JSON options bind case-insensitively but not across
+    /// underscores: <c>device_id</c> would silently deserialize to null.
+    /// </remarks>
+    public sealed record ProgressPayload(
+        [property: JsonPropertyName("document")] string? Document,
+        [property: JsonPropertyName("progress")] string? Progress,
+        [property: JsonPropertyName("percentage")] double? Percentage,
+        [property: JsonPropertyName("device")] string? Device,
+        [property: JsonPropertyName("device_id")] string? DeviceId);
+
+    /// <summary>What a reader GETs back, with the server timestamp of the position.</summary>
+    private static object ProgressResult(ReadProgressEntity row) => new
+    {
+        document = $"urn:bindery:book:{row.BookId:N}",
+        progress = row.Progress,
+        percentage = row.Percentage,
+        device = row.Device,
+        device_id = row.DeviceId,
+        timestamp = row.UpdatedAt.ToUnixTimeSeconds(),
+    };
+
+    /// <summary>
+    /// Accepts the document reference the feed emits (<c>urn:bindery:book:{N}</c>) or the
+    /// bare id in either textual case. Anything else is a 404, not an exception: readers
+    /// will happily point at some other catalog's documents.
+    /// </summary>
+    private static bool TryParseDocument(string? document, out Guid bookId)
+    {
+        bookId = Guid.Empty;
+
+        if (string.IsNullOrWhiteSpace(document))
+        {
+            return false;
+        }
+
+        var candidate = document.StartsWith("urn:bindery:book:", StringComparison.OrdinalIgnoreCase)
+            ? document["urn:bindery:book:".Length..]
+            : document;
+
+        // Both the N format (no dashes) and the dashed form parse; feeds emit N.
+        return Guid.TryParseExact(candidate, "N", out bookId)
+            || Guid.TryParse(candidate, out bookId);
+    }
+
+    /// <summary>The token that authenticated the request, or <see cref="Guid.Empty"/> for
+    /// the development principal, which has no token row at all.</summary>
+    private static Guid TokenIdOf(ClaimsPrincipal user) =>
+        Guid.TryParse(user.FindFirstValue(BinderyClaims.TokenId), out var tokenId)
+            ? tokenId
+            : Guid.Empty;
+
+    private static async Task<IResult> ProgressPutAsync(
+        ProgressPayload payload,
+        ClaimsPrincipal user,
+        ReadProgressService progress,
+        CancellationToken ct)
+    {
+        if (payload is null
+            || !TryParseDocument(payload.Document, out var bookId)
+            || string.IsNullOrWhiteSpace(payload.Progress))
+        {
+            return Results.BadRequest();
+        }
+
+        var row = await progress.UpsertAsync(
+            bookId,
+            TokenIdOf(user),
+            payload.Progress,
+            payload.Percentage,
+            payload.Device,
+            payload.DeviceId,
+            ct);
+
+        return row is null ? Results.NotFound() : Results.Ok(ProgressResult(row));
+    }
+
+    private static async Task<IResult> ProgressGetAsync(
+        string document,
+        ClaimsPrincipal user,
+        ReadProgressService progress,
+        CancellationToken ct)
+    {
+        if (!TryParseDocument(document, out var bookId))
+        {
+            return Results.NotFound();
+        }
+
+        var row = await progress.GetAsync(bookId, TokenIdOf(user), ct);
+
+        return row is null ? Results.NotFound() : Results.Ok(ProgressResult(row));
     }
 }

@@ -274,3 +274,35 @@ public class FeedTokenEntity
 
     public bool IsActive => RevokedAt is null;
 }
+
+/// <summary>
+/// A reader's position in one book, as last reported by one feed token. One row per
+/// (book, token); a new push overwrites the old position rather than growing history.
+/// </summary>
+public class ReadProgressEntity
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+
+    public Guid BookId { get; set; }
+
+    public BookEntity? Book { get; set; }
+
+    /// <summary>The feed token that pushed this position; anonymous to other tokens.</summary>
+    public Guid TokenId { get; set; }
+
+    /// <summary>Opaque reader-specific position (page, xpointer, percent — reader's choice).</summary>
+    [MaxLength(500)]
+    public string Progress { get; set; } = string.Empty;
+
+    /// <summary>0..1 fraction of the book, when the reader can compute one.</summary>
+    public double? Percentage { get; set; }
+
+    [MaxLength(200)]
+    public string? Device { get; set; }
+
+    /// <summary>The reader's own instance fingerprint, passed through from the client.</summary>
+    [MaxLength(200)]
+    public string? DeviceId { get; set; }
+
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+}

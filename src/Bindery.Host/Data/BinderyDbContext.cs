@@ -25,6 +25,7 @@ public class BinderyDbContext(DbContextOptions<BinderyDbContext> options) : DbCo
     public DbSet<PluginSettingEntity> PluginSettings => Set<PluginSettingEntity>();
 
     public DbSet<FeedTokenEntity> FeedTokens => Set<FeedTokenEntity>();
+    public DbSet<ReadProgressEntity> ReadProgress => Set<ReadProgressEntity>();
 
     /// <summary>
     /// SQLite has no date type, and its provider refuses to order by or compare a
@@ -134,7 +135,17 @@ public class BinderyDbContext(DbContextOptions<BinderyDbContext> options) : DbCo
             token.Ignore(t => t.IsActive);
         });
 
-        base.OnModelCreating(model);
+        model.Entity<ReadProgressEntity>(progress =>
+        {
+            // One position per (book, token): a push from the same reader overwrites.
+            progress.HasIndex(p => new { p.BookId, p.TokenId }).IsUnique();
+
+            progress.HasOne(p => p.Book)
+                .WithMany()
+                .HasForeignKey(p => p.BookId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
     }
 }
 

@@ -67,6 +67,7 @@ builder.Services.AddScoped<PluginActionService>();
 builder.Services.AddSingleton<LibraryStore>();
 builder.Services.AddSingleton<DownloadQueue>();
 builder.Services.AddScoped<CatalogService>();
+builder.Services.AddScoped<ReadProgressService>();
 builder.Services.AddScoped<DownloadService>();
 builder.Services.AddScoped<DownloadRunner>();
 builder.Services.AddScoped<BookIndexer>();

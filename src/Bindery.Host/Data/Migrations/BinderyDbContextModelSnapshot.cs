@@ -15,7 +15,7 @@ namespace Bindery.Host.Data.Migrations
         protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "8.0.11");
+            modelBuilder.HasAnnotation("ProductVersion", "8.0.30");
 
             modelBuilder.Entity("Bindery.Host.Data.AuthorEntity", b =>
                 {
@@ -372,6 +372,45 @@ namespace Bindery.Host.Data.Migrations
                     b.ToTable("PluginSettings");
                 });
 
+            modelBuilder.Entity("Bindery.Host.Data.ReadProgressEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("BookId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Device")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DeviceId")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<double?>("Percentage")
+                        .HasColumnType("REAL");
+
+                    b.Property<string>("Progress")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("TokenId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("UpdatedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BookId", "TokenId")
+                        .IsUnique();
+
+                    b.ToTable("ReadProgress");
+                });
+
             modelBuilder.Entity("Bindery.Host.Data.SeriesEntity", b =>
                 {
                     b.Property<int>("Id")
@@ -488,6 +527,17 @@ namespace Bindery.Host.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Job");
+                });
+
+            modelBuilder.Entity("Bindery.Host.Data.ReadProgressEntity", b =>
+                {
+                    b.HasOne("Bindery.Host.Data.BookEntity", "Book")
+                        .WithMany()
+                        .HasForeignKey("BookId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Book");
                 });
 
             modelBuilder.Entity("Bindery.Host.Data.AuthorEntity", b =>
