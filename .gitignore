@@ -13,3 +13,6 @@ NuGet.offline.config
 __pycache__/
 *.pyc
 /artifacts/
+
+# Local KOReader plugin fork (separate git repo)
+koreader/
