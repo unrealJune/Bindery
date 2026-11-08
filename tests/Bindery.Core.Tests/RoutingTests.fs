@@ -17,6 +17,7 @@ let private manifest name priority probe patterns =
       Capabilities = { Capabilities.Default with Probe = probe }
       Config = []
       Actions = []
+      Circulation = None
       Ui = { Mode = Declarative; Entry = "/"; Nav = [] } }
 
 let private ao3 = compile (manifest "fanficfare" 100 true [ @"^https?://(www\.)?archiveofourown\.org/works/\d+" ])

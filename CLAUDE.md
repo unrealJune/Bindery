@@ -39,6 +39,9 @@ src/Bindery.Host/       C#  — ASP.NET Core: OPDS endpoints, JSON API, Razor UI
 tests/Bindery.Core.Tests/   F# unit tests
 tests/conformance/          Python black-box suite any plugin image must pass
 plugins/fanficfare/         Reference plugin: FastAPI service + Dockerfile
+plugins/hedgerow/           Royal Road + Discord serial reconciler (sandboxed UI, notify)
+plugins/bibliocommons/      Library circulation (protocol §3.8): SPL, KCLS, any BiblioCommons
+docs/CIRCULATION.md         Hold/loan lifecycle and the notification subsystem
 deploy/helm/bindery/        Helm chart — also the plugin install mechanism
 deploy/docker-compose.yml   Local dev, mirrors the chart's shape
 docs/PLUGIN-PROTOCOL.md     Normative contract. Change this before changing code.
@@ -76,6 +79,13 @@ Hedgerow's chapter parser and store are stdlib-only and unit tested without the 
 
 ```bash
 cd plugins/hedgerow && python -m unittest discover -s tests -t .
+```
+
+The BiblioCommons plugin's catalog mapping is tested against captured live gateway responses,
+also stdlib-only:
+
+```bash
+cd plugins/bibliocommons && python -m unittest discover -s tests -t .
 ```
 
 ## Conventions
@@ -160,6 +170,22 @@ Everything that was true of this tier is still true, in roughly the order it bre
   in more places.
 - Docker may be unavailable (no daemon) in agent sandboxes. Validate Dockerfiles by
   inspection and let CI build them.
+
+## Circulation and notifications
+
+Library circulation (protocol §3.8, `docs/CIRCULATION.md`) is the one place Bindery is
+multi-user on purpose: a library card is a person's.
+
+- **Every circulation query filters by owner.** `CirculationAccountStore` and
+  `CirculationService` take the owner on every method. Do not add a lookup by id alone.
+- **The lifecycle rules are `Bindery.Core.Circulation.reconcile`, a pure function.** Do not
+  re-derive "collected" or "expired" in C#; change the F# and its tests.
+- **Never reconcile a failed or partial snapshot.** Disappearance is evidence only from a
+  complete one; otherwise every missing hold reads as "closed" and the person gets mail.
+- **Plugins never send notifications.** They report state; the host decides. A new source of
+  messages enqueues through `NotificationService.EnqueueAsync` and adds its categories to
+  `NotificationCategories`. Message text is plain, and subjects are single-line — titles
+  come from library data, and a newline in a mail header is header injection.
 
 ## Things not to do
 

@@ -29,6 +29,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import checks_protocol  # noqa: F401,E402  (import registers checks)
 import checks_ui  # noqa: F401,E402
+import checks_circulation  # noqa: F401,E402
 from harness import REGISTRY, Client, Ctx, run_all  # noqa: E402
 
 STUB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stub", "stub_plugin.py")
@@ -80,6 +81,14 @@ def main(argv=None) -> int:
                         help="plugin config value, repeatable")
     parser.add_argument("--action-input", action="append", metavar="ACTION:KEY=VALUE",
                         help="input for an action to invoke, repeatable")
+    parser.add_argument("--account", action="append", metavar="KEY=VALUE",
+                        help="circulation account field, repeatable (protocol 3.8)")
+    parser.add_argument("--search-query", default="dune",
+                        help="query for the circulation search checks (default 'dune')")
+    parser.add_argument("--hold-item",
+                        help="catalog id to place, find, and cancel a hold on — a real side effect")
+    parser.add_argument("--try-bad-login", action="store_true",
+                        help="present a wrong PIN once to check auth_required — can count toward a lockout")
     parser.add_argument("--only", help="run only checks whose name contains this, or a whole group")
     parser.add_argument("--list", action="store_true", help="list checks and exit")
     parser.add_argument("--no-color", action="store_true")
@@ -95,6 +104,7 @@ def main(argv=None) -> int:
         return 0
 
     args.config = parse_kv(args.config, "config")
+    args.account = parse_kv(args.account, "account")
     args.action_input = parse_action_input(args.action_input)
 
     stub = None
@@ -104,6 +114,9 @@ def main(argv=None) -> int:
         args.token = args.token or "conformance-self-test"
         args.download_url = args.download_url or "https://stub.invalid/works/1"
         args.action_input = args.action_input or {"echo": {"text": "hello"}}
+        args.account = args.account or {"library": "stubville", "card": "29000012344821", "pin": "0000"}
+        args.hold_item = args.hold_item or "stub-1"
+        args.try_bad_login = True
         env = dict(os.environ, BINDERY_PLUGIN_TOKEN=args.token, BINDERY_PLUGIN_PORT=str(port),
                    BINDERY_STUB_UI_MODE=args.stub_ui_mode)
         stub = subprocess.Popen([sys.executable, STUB], env=env,

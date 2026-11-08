@@ -1,0 +1,238 @@
+{
+ "catalogSearch": {
+  "fields": [
+   {
+    "id": "STATUS",
+    "hasMore": true,
+    "fieldFilters": [
+     {
+      "value": "_online_",
+      "groupIds": [],
+      "label": "_online_",
+      "count": 288399,
+      "applied": false
+     },
+     {
+      "value": "_physical_",
+      "groupIds": [],
+      "label": "_physical_",
+      "count": 595767,
+      "applied": true
+     },
+     {
+      "value": "4",
+      "groupIds": [],
+      "label": "Ballard Branch",
+      "count": 18932,
+      "applied": false
+     },
+     {
+      "value": "6",
+      "groupIds": [],
+      "label": "Beacon Hill Branch",
+      "count": 11544,
+      "applied": false
+     },
+     {
+      "value": "8",
+      "groupIds": [],
+      "label": "Broadview Branch",
+      "count": 16323,
+      "applied": false
+     },
+     {
+      "value": "10",
+      "groupIds": [],
+      "label": "Capitol Hill Branch",
+      "count": 12764,
+      "applied": false
+     },
+     {
+      "value": "3",
+      "groupIds": [],
+      "label": "Central Library",
+      "count": 345872,
+      "applied": false
+     },
+     {
+      "value": "11",
+      "groupIds": [],
+      "label": "Columbia Branch",
+      "count": 11329,
+      "applied": false
+     },
+     {
+      "value": "12",
+      "groupIds": [],
+      "label": "Delridge Branch",
+      "count": 6121,
+      "applied": false
+     },
+     {
+      "value": "41",
+      "groupIds": [],
+      "label": "Digital Resources",
+      "count": 211474,
+      "applied": false
+     },
+     {
+      "value": "13",
+      "groupIds": [],
+      "label": "Douglass-Truth Branch",
+      "count": 19367,
+      "applied": false
+     },
+     {
+      "value": "15",
+      "groupIds": [],
+      "label": "Green Lake Branch",
+      "count": 7028,
+      "applied": false
+     },
+     {
+      "value": "16",
+      "groupIds": [],
+      "label": "Greenwood Branch",
+      "count": 16875,
+      "applied": false
+     },
+     {
+      "value": "17",
+      "groupIds": [],
+      "label": "High Point Branch",
+      "count": 6401,
+      "applied": false
+     },
+     {
+      "value": "19",
+      "groupIds": [],
+      "label": "International District/Chinatown Branch",
+      "count": 2658,
+      "applied": false
+     },
+     {
+      "value": "20",
+      "groupIds": [],
+      "label": "Lake City Branch",
+      "count": 18462,
+      "applied": false
+     },
+     {
+      "value": "21",
+      "groupIds": [],
+      "label": "Madrona-Sally Goldmark Branch",
+      "count": 3035,
+      "applied": false
+     },
+     {
+      "value": "22",
+      "groupIds": [],
+      "label": "Magnolia Branch",
+      "count": 9484,
+      "applied": false
+     },
+     {
+      "value": "37",
+      "groupIds": [],
+      "label": "Mobile Services",
+      "count": 1209,
+      "applied": false
+     },
+     {
+      "value": "23",
+      "groupIds": [],
+      "label": "Montlake Branch",
+      "count": 5805,
+      "applied": false
+     },
+     {
+      "value": "25",
+      "groupIds": [],
+      "label": "NewHolly Branch",
+      "count": 3627,
+      "applied": false
+     },
+     {
+      "value": "26",
+      "groupIds": [],
+      "label": "Northeast Branch",
+      "count": 20586,
+      "applied": false
+     },
+     {
+      "value": "28",
+      "groupIds": [],
+      "label": "Northgate Branch",
+      "count": 11034,
+      "applied": false
+     },
+     {
+      "value": "29",
+      "groupIds": [],
+      "label": "Queen Anne Branch",
+      "count": 8762,
+      "applied": false
+     },
+     {
+      "value": "30",
+      "groupIds": [],
+      "label": "Rainier Beach Branch",
+      "count": 12826,
+      "applied": false
+     },
+     {
+      "value": "32",
+      "groupIds": [],
+      "label": "South Park Branch",
+      "count": 5520,
+      "applied": false
+     },
+     {
+      "value": "33",
+      "groupIds": [],
+      "label": "Southwest Branch",
+      "count": 19066,
+      "applied": false
+     },
+     {
+      "value": "38",
+      "groupIds": [],
+      "label": "Technical and Collection Services",
+      "count": 52,
+      "applied": false
+     },
+     {
+      "value": "35",
+      "groupIds": [],
+      "label": "Wallingford Branch",
+      "count": 2078,
+      "applied": false
+     }
+    ]
+   }
+  ]
+ },
+ "entities": {
+  "bibs": {},
+  "sites": {
+   "WA-SEATTLE": {
+    "siteId": "WA-SEATTLE",
+    "type": "CORE",
+    "libraryId": 246,
+    "shortName": "SPL",
+    "longName": "The Seattle Public Library",
+    "logo": "/images/WA-SEATTLE/logo.png",
+    "domain": "seattle",
+    "subdomain": "seattle",
+    "defaultScopeId": "WA-SEATTLE",
+    "scopes": [
+     {
+      "scopeName": "Seattle Public Library",
+      "scopeId": "WA-SEATTLE",
+      "parentScopeId": null
+     }
+    ]
+   }
+  }
+ }
+}

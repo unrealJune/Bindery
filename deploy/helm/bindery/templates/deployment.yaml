@@ -22,6 +22,7 @@ spec:
       {{- end }}
     spec:
       serviceAccountName: {{ include "bindery.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.serviceAccount.automountToken }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -51,6 +52,13 @@ spec:
                 secretKeyRef:
                   name: {{ . }}
                   key: {{ $.Values.bindery.oidc.clientSecret.key }}
+            {{- end }}
+            {{- with .Values.bindery.notifications.email.passwordSecret.existingSecret }}
+            - name: Bindery__Notifications__Email__Password
+              valueFrom:
+                secretKeyRef:
+                  name: {{ . }}
+                  key: {{ $.Values.bindery.notifications.email.passwordSecret.key }}
             {{- end }}
           volumeMounts:
             - name: data

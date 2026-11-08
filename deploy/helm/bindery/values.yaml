@@ -13,6 +13,13 @@ serviceAccount:
   create: true
   annotations: {}
   name: ""
+  # Bindery never calls the Kubernetes API, and neither does any plugin: the whole
+  # protocol is HTTP between the host and a container it was told the address of.
+  # Mounting a token would hand a compromised process a cluster credential it has no
+  # use for, which is the one thing standing between "someone owns the catalog" and
+  # "someone owns the namespace". Set both on the ServiceAccount and on every pod
+  # spec, because the pod-level field is the one that actually wins.
+  automountToken: false
 
 podAnnotations: {}
 podLabels: {}
@@ -111,6 +118,37 @@ bindery:
     # not reachable from outside. A `service`-mode plugin elsewhere needs a routable URL.
     notifyUrl: http://127.0.0.1:8080/bindery/v1/notify
 
+  circulation:
+    # Library holds and loans through circulation plugins (docs/CIRCULATION.md). Each
+    # person connects their own library cards in the UI; nothing here holds credentials.
+    syncEnabled: true
+    # How stale one card may get before it is checked again.
+    syncInterval: 00:30:00
+    sweepInterval: 00:05:00
+    # Cards checked per sweep — keeps a restart from becoming a burst of library sign-ins.
+    maxPerSweep: 4
+    # Reminders before a ready hold's pickup deadline and before a loan's due date.
+    pickupReminder: 2.00:00:00
+    dueReminder: 3.00:00:00
+
+  notifications:
+    # Shared by every source of messages: circulation plugins, downloads, anything later.
+    # Plugins never send mail themselves; they report state and Bindery decides.
+    email:
+      enabled: false
+      host: ""
+      # STARTTLS on 587. The framework SMTP client does not do implicit TLS on 465.
+      port: 587
+      useStartTls: true
+      username: ""
+      from: ""
+      # Base URL for links inside messages; defaults to bindery.publicBaseUrl.
+      linkBaseUrl: ""
+      # The SMTP password, from an existing Secret. Never put it in values.yaml.
+      passwordSecret:
+        existingSecret: ""
+        key: smtp-password
+
   uploads:
     # Largest file the "deposit a file" form accepts, in bytes. This also raises Kestrel's
     # request-body ceiling, so an ingress in front of Bindery needs its own body limit
@@ -167,6 +205,22 @@ plugins:
         - ReadWriteOnce
       storageClass: ""
       existingClaim: ""
+
+  # Library search, holds, and loans for BiblioCommons catalogs — Seattle Public Library and
+  # KCLS are built in, and any other BiblioCommons library works by subdomain. Holds no
+  # configuration and no state: each person connects their own card in the UI, and the
+  # host stores it encrypted. Sessions live in the plugin's memory only, so no volume.
+  # Add more libraries to the account form's list with BIBLIOCOMMONS_LIBRARIES in a
+  # configSecret, e.g. "sfpl=San Francisco Public Library".
+  - name: bibliocommons
+    enabled: true
+    mode: sidecar
+    image: ghcr.io/OWNER/bindery-plugin-bibliocommons:0.1.0
+    port: 8082
+    resources:
+      limits:
+        memory: 160Mi
+    configSecret: ""
 
 nodeSelector: {}
 tolerations: []

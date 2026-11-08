@@ -15,7 +15,7 @@ namespace Bindery.Host.Data.Migrations
         protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "8.0.11");
+            modelBuilder.HasAnnotation("ProductVersion", "8.0.30");
 
             modelBuilder.Entity("Bindery.Host.Data.AuthorEntity", b =>
                 {
@@ -194,6 +194,203 @@ namespace Bindery.Host.Data.Migrations
                     b.ToTable("BookTags");
                 });
 
+            modelBuilder.Entity("Bindery.Host.Data.CirculationAccountEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("DisplayName")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("FieldsJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("LastAttemptAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("LastSyncedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("LibraryName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("NeedsAttention")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Owner")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PickupLocationsJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Plugin")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ProtectedSecrets")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LastAttemptAt");
+
+                    b.HasIndex("Owner");
+
+                    b.ToTable("CirculationAccounts");
+                });
+
+            modelBuilder.Entity("Bindery.Host.Data.CirculationEventEntity", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("At")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Detail")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("FromState")
+                        .HasMaxLength(24)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("ItemId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ToState")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ItemId", "At");
+
+                    b.ToTable("CirculationEvents");
+                });
+
+            modelBuilder.Entity("Bindery.Host.Data.CirculationItemEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("AccountId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Authors")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CatalogId")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CoverUrl")
+                        .HasMaxLength(2000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("DueAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ExternalId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("FirstSeenAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Format")
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("LastSeenAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Medium")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PickupLocation")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("PlacedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("QueuePosition")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("QueueSize")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("ReadyUntil")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("RemindedFor")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("StateChangedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("SuspendedUntil")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Url")
+                        .HasMaxLength(2000)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("State");
+
+                    b.HasIndex("AccountId", "Kind", "ExternalId");
+
+                    b.ToTable("CirculationItems");
+                });
+
             modelBuilder.Entity("Bindery.Host.Data.DownloadJobEntity", b =>
                 {
                     b.Property<Guid>("Id")
@@ -238,6 +435,10 @@ namespace Bindery.Host.Data.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("RequestedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RequesterSubject")
                         .HasMaxLength(200)
                         .HasColumnType("TEXT");
 
@@ -338,6 +539,90 @@ namespace Bindery.Host.Data.Migrations
                     b.ToTable("JobLog");
                 });
 
+            modelBuilder.Entity("Bindery.Host.Data.NotificationEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("NextAttemptAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Recipient")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("SentAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Recipient", "CreatedAt");
+
+                    b.HasIndex("Status", "NextAttemptAt");
+
+                    b.ToTable("Notifications");
+                });
+
+            modelBuilder.Entity("Bindery.Host.Data.NotificationPreferenceEntity", b =>
+                {
+                    b.Property<string>("Subject")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Email")
+                        .HasMaxLength(320)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("EmailEnabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("MutedCategories")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("UpdatedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Subject");
+
+                    b.ToTable("NotificationPreferences");
+                });
+
             modelBuilder.Entity("Bindery.Host.Data.PluginSettingEntity", b =>
                 {
                     b.Property<int>("Id")
@@ -370,6 +655,45 @@ namespace Bindery.Host.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("PluginSettings");
+                });
+
+            modelBuilder.Entity("Bindery.Host.Data.ReadProgressEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("BookId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Device")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DeviceId")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<double?>("Percentage")
+                        .HasColumnType("REAL");
+
+                    b.Property<string>("Progress")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("TokenId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("UpdatedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BookId", "TokenId")
+                        .IsUnique();
+
+                    b.ToTable("ReadProgress");
                 });
 
             modelBuilder.Entity("Bindery.Host.Data.SeriesEntity", b =>
@@ -469,6 +793,28 @@ namespace Bindery.Host.Data.Migrations
                     b.Navigation("Tag");
                 });
 
+            modelBuilder.Entity("Bindery.Host.Data.CirculationEventEntity", b =>
+                {
+                    b.HasOne("Bindery.Host.Data.CirculationItemEntity", "Item")
+                        .WithMany("Events")
+                        .HasForeignKey("ItemId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Item");
+                });
+
+            modelBuilder.Entity("Bindery.Host.Data.CirculationItemEntity", b =>
+                {
+                    b.HasOne("Bindery.Host.Data.CirculationAccountEntity", "Account")
+                        .WithMany("Items")
+                        .HasForeignKey("AccountId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Account");
+                });
+
             modelBuilder.Entity("Bindery.Host.Data.DownloadJobEntity", b =>
                 {
                     b.HasOne("Bindery.Host.Data.BookEntity", "Book")
@@ -490,6 +836,17 @@ namespace Bindery.Host.Data.Migrations
                     b.Navigation("Job");
                 });
 
+            modelBuilder.Entity("Bindery.Host.Data.ReadProgressEntity", b =>
+                {
+                    b.HasOne("Bindery.Host.Data.BookEntity", "Book")
+                        .WithMany()
+                        .HasForeignKey("BookId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Book");
+                });
+
             modelBuilder.Entity("Bindery.Host.Data.AuthorEntity", b =>
                 {
                     b.Navigation("Books");
@@ -502,6 +859,16 @@ namespace Bindery.Host.Data.Migrations
                     b.Navigation("Files");
 
                     b.Navigation("Tags");
+                });
+
+            modelBuilder.Entity("Bindery.Host.Data.CirculationAccountEntity", b =>
+                {
+                    b.Navigation("Items");
+                });
+
+            modelBuilder.Entity("Bindery.Host.Data.CirculationItemEntity", b =>
+                {
+                    b.Navigation("Events");
                 });
 
             modelBuilder.Entity("Bindery.Host.Data.DownloadJobEntity", b =>

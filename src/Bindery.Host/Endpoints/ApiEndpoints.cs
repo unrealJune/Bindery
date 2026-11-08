@@ -27,7 +27,7 @@ public static class ApiEndpoints
             ClaimsPrincipal user,
             CancellationToken ct) =>
         {
-            var result = await downloads.EnqueueAsync(request.Url, user.Identity?.Name, request.Plugin, ct);
+            var result = await downloads.EnqueueAsync(request.Url, user.Identity?.Name, request.Plugin, ct, Identity.SubjectOf(user));
 
             return result.Accepted
                 ? Results.Created($"/api/downloads/{result.Job!.Id}", JobView.From(result.Job))
@@ -85,7 +85,7 @@ public static class ApiEndpoints
             ClaimsPrincipal user,
             CancellationToken ct) =>
         {
-            var result = await downloads.EnqueueUpdateAsync(id, user.Identity?.Name, ct);
+            var result = await downloads.EnqueueUpdateAsync(id, user.Identity?.Name, ct, Identity.SubjectOf(user));
 
             return result.Accepted
                 ? Results.Accepted($"/api/downloads/{result.Job!.Id}", JobView.From(result.Job))

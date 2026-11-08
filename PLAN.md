@@ -319,7 +319,21 @@ queue early. The schedule remains the backstop: every notification could be drop
 books would still converge, just later. That is what keeps the one host-served endpoint an
 optimization rather than a correctness dependency.
 
----
+**Read-progress sync has since shipped**, via the OPDS Plus KOReader plugin fork rather
+than a Bindery-native feature: the host gained `/opds/syncs/progress` PUT/GET under the
+catalog policy (kosync-shaped bodies, per-feed-token isolation in a `ReadProgress` table —
+migration `20261014185256_AddReadProgress`), and the fork's reader pushes/pulls from the
+reading view. The host stays sync-agnostic: it stores positions keyed by (book, feed token)
+and answers GETs; everything kosync knows about devices, debouncing, and direction
+strategies lives in the client.
+
+**Library circulation has since shipped** (protocol §3.8, `docs/CIRCULATION.md`). A plugin
+may declare `capabilities.circulation` and serve search, holds, and a per-account snapshot;
+the host owns per-person accounts (secrets encrypted), the hold/loan lifecycle as a pure F#
+reconcile function, and a notification subsystem with an outbox and an SMTP channel that
+downloads use too. The reference consumer is `plugins/bibliocommons` (Seattle Public Library,
+KCLS). This is the first per-person data in Bindery; the book library itself stays shared.
+Migration `AddCirculationAndNotifications` is additive and touches no book table.
 
 ## 11. Known risks
 

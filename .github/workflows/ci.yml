@@ -32,6 +32,12 @@ jobs:
         run: python -m unittest discover -s tests -t . --verbose
         working-directory: plugins/hedgerow
 
+      # The BiblioCommons plugin's catalog mapping runs against responses captured from the
+      # live SPL and KCLS gateways, so "is this physical or digital?" is pinned by real data.
+      - name: BiblioCommons unit tests
+        run: python -m unittest discover -s tests -t . --verbose
+        working-directory: plugins/bibliocommons
+
       - name: Plugin conformance self-test
         run: python tests/conformance/run.py --self-test --no-color
 
@@ -224,3 +230,75 @@ jobs:
         run: |
           docker rm -f plugin || true
           docker volume rm hedgerow-work || true
+
+  # The circulation plugin. It runs with no volume and a read-only root because it keeps no
+  # state, and this proves that posture. The account-bound checks (verify, snapshot, holds)
+  # need a real library card and are not run in CI; the protocol surface, the circulation
+  # manifest, and malformed-request handling all are. Live catalog search is exercised too,
+  # since it needs no credentials — a library's public API changing shape should fail here.
+  bibliocommons-conformance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      BINDERY_PLUGIN_TOKEN: conformance-ci
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Build plugin image
+        uses: docker/build-push-action@v7
+        with:
+          context: plugins/bibliocommons
+          file: plugins/bibliocommons/Dockerfile
+          push: false
+          load: true
+          tags: bindery-plugin-bibliocommons:ci
+          cache-from: type=gha,scope=bibliocommons
+          cache-to: type=gha,scope=bibliocommons,mode=max
+
+      - name: Start plugin
+        run: |
+          docker run -d --name plugin \
+            -p 8080:8080 \
+            -e BINDERY_PLUGIN_TOKEN="$BINDERY_PLUGIN_TOKEN" \
+            --read-only \
+            --tmpfs /tmp:rw,size=16m \
+            bindery-plugin-bibliocommons:ci
+
+      - name: Wait for health
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:8080/healthz >/dev/null 2>&1; then
+              echo "healthy after ${i}s"; exit 0
+            fi
+            sleep 1
+          done
+          echo "plugin never became healthy"; exit 1
+
+      - name: Conformance suite
+        run: |
+          python tests/conformance/run.py \
+            --base-url http://localhost:8080 \
+            --token "$BINDERY_PLUGIN_TOKEN" \
+            --no-color
+
+      # Search needs no credentials, so the card and PIN here are placeholders.
+      - name: Live catalog search (SPL and KCLS)
+        run: |
+          for library in seattle kcls; do
+            python tests/conformance/run.py \
+              --base-url http://localhost:8080 \
+              --token "$BINDERY_PLUGIN_TOKEN" \
+              --only circulation.search \
+              --account library=$library --account card=0 --account pin=unused \
+              --no-color
+          done
+
+      - name: Plugin logs
+        if: always()
+        run: docker logs plugin || true
+
+      - name: Stop plugin
+        if: always()
+        run: docker rm -f plugin || true
