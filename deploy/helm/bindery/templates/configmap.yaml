@@ -47,6 +47,29 @@ data:
   Bindery__Updates__NotifyDebounce: {{ .Values.bindery.updates.notifyDebounce | quote }}
   Bindery__Updates__NotifyUrl: {{ .Values.bindery.updates.notifyUrl | quote }}
   Bindery__Uploads__MaxBytes: {{ .Values.bindery.uploads.maxBytes | int64 | quote }}
+  Bindery__Circulation__SyncEnabled: {{ .Values.bindery.circulation.syncEnabled | quote }}
+  Bindery__Circulation__SyncInterval: {{ .Values.bindery.circulation.syncInterval | quote }}
+  Bindery__Circulation__SweepInterval: {{ .Values.bindery.circulation.sweepInterval | quote }}
+  Bindery__Circulation__MaxPerSweep: {{ .Values.bindery.circulation.maxPerSweep | quote }}
+  Bindery__Circulation__PickupReminder: {{ .Values.bindery.circulation.pickupReminder | quote }}
+  Bindery__Circulation__DueReminder: {{ .Values.bindery.circulation.dueReminder | quote }}
+  {{- with .Values.bindery.notifications.email }}
+  Bindery__Notifications__Email__Enabled: {{ .enabled | quote }}
+  Bindery__Notifications__Email__Port: {{ .port | quote }}
+  Bindery__Notifications__Email__UseStartTls: {{ .useStartTls | quote }}
+  {{- with .host }}
+  Bindery__Notifications__Email__Host: {{ . | quote }}
+  {{- end }}
+  {{- with .username }}
+  Bindery__Notifications__Email__Username: {{ . | quote }}
+  {{- end }}
+  {{- with .from }}
+  Bindery__Notifications__Email__From: {{ . | quote }}
+  {{- end }}
+  {{- with .linkBaseUrl }}
+  Bindery__Notifications__Email__LinkBaseUrl: {{ . | quote }}
+  {{- end }}
+  {{- end }}
   {{- range $i, $plugin := .Values.plugins }}
   Bindery__Plugins__Registry__{{ $i }}__Name: {{ $plugin.name | quote }}
   Bindery__Plugins__Registry__{{ $i }}__Enabled: {{ $plugin.enabled | quote }}
