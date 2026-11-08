@@ -98,10 +98,10 @@ public static class OpdsEndpoints
         });
 
         atom.MapGet("/download/{id:guid}.{format}", DownloadAsync);
-        atom.MapGet("/cover/{id:guid}", (Guid id, CatalogService catalog, LibraryStore library, CancellationToken ct) =>
-            ImageAsync(id, catalog, library, ct));
-        atom.MapGet("/thumb/{id:guid}", (Guid id, CatalogService catalog, LibraryStore library, CancellationToken ct) =>
-            ImageAsync(id, catalog, library, ct));
+        atom.MapGet("/cover/{id:guid}", (Guid id, ClaimsPrincipal user, CatalogService catalog, LibraryStore library, CancellationToken ct) =>
+            ImageAsync(id, user, catalog, library, ct));
+        atom.MapGet("/thumb/{id:guid}", (Guid id, ClaimsPrincipal user, CatalogService catalog, LibraryStore library, CancellationToken ct) =>
+            ImageAsync(id, user, catalog, library, ct));
 
         // Reading positions. Kosync-shaped bodies (snake_case, `document` either the URN
         // the feed emits or the bare book id) so the reader-side client stays dumb.
@@ -121,15 +121,22 @@ public static class OpdsEndpoints
         return builder;
     }
 
+    /// <remarks>
+    /// Every feed is the reader's own shelf: the owner is whoever the request authenticated
+    /// as, a feed token standing for the person who issued it. A book, author, series, or
+    /// tag that is only on someone else's shelf is a 404 here, the same as one that does
+    /// not exist.
+    /// </remarks>
     private static void MapTree(RouteGroupBuilder group, CoreOpds.UrlBuilder urls, bool json)
     {
-        group.MapGet("/", async (CatalogService catalog, IOptions<BinderyOptions> options, CancellationToken ct) =>
+        group.MapGet("/", async (ClaimsPrincipal user, CatalogService catalog, IOptions<BinderyOptions> options, CancellationToken ct) =>
         {
-            var updated = await catalog.LastModifiedAsync(ct);
-            var authors = await catalog.AuthorsAsync(ct);
-            var series = await catalog.SeriesAsync(ct);
-            var tags = await catalog.TagsAsync(ct);
-            var total = await catalog.CountAsync(ct);
+            var owner = Identity.SubjectOf(user);
+            var updated = await catalog.LastModifiedAsync(owner, ct);
+            var authors = await catalog.AuthorsAsync(owner, ct);
+            var series = await catalog.SeriesAsync(owner, ct);
+            var tags = await catalog.TagsAsync(owner, ct);
+            var total = await catalog.CountAsync(owner, ct);
 
             var entries = new List<CoreOpds.Entry>
             {
@@ -155,35 +162,37 @@ public static class OpdsEndpoints
             return Render(feed, json);
         });
 
-        group.MapGet("/new", (CatalogService catalog, IOptions<BinderyOptions> options, int? page, CancellationToken ct) =>
+        group.MapGet("/new", (ClaimsPrincipal user, CatalogService catalog, IOptions<BinderyOptions> options, int? page, CancellationToken ct) =>
             AcquisitionAsync(
-                catalog, options, urls, json, "new", "Recently added", page,
-                (size, index) => catalog.RecentAsync(index, size, ct), ct));
+                catalog, Identity.SubjectOf(user), options, urls, json, "new", "Recently added", page,
+                (shelf, size, index) => catalog.RecentAsync(shelf, index, size, ct), ct));
 
-        group.MapGet("/all", (CatalogService catalog, IOptions<BinderyOptions> options, int? page, CancellationToken ct) =>
+        group.MapGet("/all", (ClaimsPrincipal user, CatalogService catalog, IOptions<BinderyOptions> options, int? page, CancellationToken ct) =>
             AcquisitionAsync(
-                catalog, options, urls, json, "all", "All books", page,
-                (size, index) => catalog.AllAsync(index, size, ct), ct));
+                catalog, Identity.SubjectOf(user), options, urls, json, "all", "All books", page,
+                (shelf, size, index) => catalog.AllAsync(shelf, index, size, ct), ct));
 
-        group.MapGet("/search", (CatalogService catalog, IOptions<BinderyOptions> options, [FromQuery] string? q, int? page, CancellationToken ct) =>
+        group.MapGet("/search", (ClaimsPrincipal user, CatalogService catalog, IOptions<BinderyOptions> options, [FromQuery] string? q, int? page, CancellationToken ct) =>
             AcquisitionAsync(
-                catalog, options, urls, json,
+                catalog, Identity.SubjectOf(user), options, urls, json,
                 $"search?q={Uri.EscapeDataString(q ?? string.Empty)}",
                 string.IsNullOrWhiteSpace(q) ? "Search" : $"Results for “{q}”",
                 page,
-                (size, index) => catalog.SearchAsync(q ?? string.Empty, index, size, ct),
+                (shelf, size, index) => catalog.SearchAsync(shelf, q ?? string.Empty, index, size, ct),
                 ct));
 
-        group.MapGet("/authors", async (CatalogService catalog, CancellationToken ct) =>
+        group.MapGet("/authors", async (ClaimsPrincipal user, CatalogService catalog, CancellationToken ct) =>
         {
-            var updated = await catalog.LastModifiedAsync(ct);
-            var groupings = await catalog.AuthorsAsync(ct);
+            var owner = Identity.SubjectOf(user);
+            var updated = await catalog.LastModifiedAsync(owner, ct);
+            var groupings = await catalog.AuthorsAsync(owner, ct);
             return Render(GroupingFeed(urls, "authors", "Authors", groupings, updated), json);
         });
 
-        group.MapGet("/authors/{id:int}", async (int id, CatalogService catalog, IOptions<BinderyOptions> options, int? page, CancellationToken ct) =>
+        group.MapGet("/authors/{id:int}", async (int id, ClaimsPrincipal user, CatalogService catalog, IOptions<BinderyOptions> options, int? page, CancellationToken ct) =>
         {
-            var author = await catalog.FindAuthorAsync(id, ct);
+            var owner = Identity.SubjectOf(user);
+            var author = await catalog.FindAuthorAsync(owner, id, ct);
 
             if (author is null)
             {
@@ -191,20 +200,22 @@ public static class OpdsEndpoints
             }
 
             return await AcquisitionAsync(
-                catalog, options, urls, json, $"authors/{id}", author.Name, page,
-                (size, index) => catalog.ByAuthorAsync(id, index, size, ct), ct, up: "authors");
+                catalog, owner, options, urls, json, $"authors/{id}", author.Name, page,
+                (shelf, size, index) => catalog.ByAuthorAsync(shelf, id, index, size, ct), ct, up: "authors");
         });
 
-        group.MapGet("/series", async (CatalogService catalog, CancellationToken ct) =>
+        group.MapGet("/series", async (ClaimsPrincipal user, CatalogService catalog, CancellationToken ct) =>
         {
-            var updated = await catalog.LastModifiedAsync(ct);
-            var groupings = await catalog.SeriesAsync(ct);
+            var owner = Identity.SubjectOf(user);
+            var updated = await catalog.LastModifiedAsync(owner, ct);
+            var groupings = await catalog.SeriesAsync(owner, ct);
             return Render(GroupingFeed(urls, "series", "Series", groupings, updated), json);
         });
 
-        group.MapGet("/series/{id:int}", async (int id, CatalogService catalog, IOptions<BinderyOptions> options, int? page, CancellationToken ct) =>
+        group.MapGet("/series/{id:int}", async (int id, ClaimsPrincipal user, CatalogService catalog, IOptions<BinderyOptions> options, int? page, CancellationToken ct) =>
         {
-            var series = await catalog.FindSeriesAsync(id, ct);
+            var owner = Identity.SubjectOf(user);
+            var series = await catalog.FindSeriesAsync(owner, id, ct);
 
             if (series is null)
             {
@@ -212,20 +223,22 @@ public static class OpdsEndpoints
             }
 
             return await AcquisitionAsync(
-                catalog, options, urls, json, $"series/{id}", series.Name, page,
-                (size, index) => catalog.BySeriesAsync(id, index, size, ct), ct, up: "series");
+                catalog, owner, options, urls, json, $"series/{id}", series.Name, page,
+                (shelf, size, index) => catalog.BySeriesAsync(shelf, id, index, size, ct), ct, up: "series");
         });
 
-        group.MapGet("/tags", async (CatalogService catalog, CancellationToken ct) =>
+        group.MapGet("/tags", async (ClaimsPrincipal user, CatalogService catalog, CancellationToken ct) =>
         {
-            var updated = await catalog.LastModifiedAsync(ct);
-            var groupings = await catalog.TagsAsync(ct);
+            var owner = Identity.SubjectOf(user);
+            var updated = await catalog.LastModifiedAsync(owner, ct);
+            var groupings = await catalog.TagsAsync(owner, ct);
             return Render(GroupingFeed(urls, "tags", "Tags", groupings, updated), json);
         });
 
-        group.MapGet("/tags/{id:int}", async (int id, CatalogService catalog, IOptions<BinderyOptions> options, int? page, CancellationToken ct) =>
+        group.MapGet("/tags/{id:int}", async (int id, ClaimsPrincipal user, CatalogService catalog, IOptions<BinderyOptions> options, int? page, CancellationToken ct) =>
         {
-            var tag = await catalog.FindTagAsync(id, ct);
+            var owner = Identity.SubjectOf(user);
+            var tag = await catalog.FindTagAsync(owner, id, ct);
 
             if (tag is null)
             {
@@ -233,13 +246,13 @@ public static class OpdsEndpoints
             }
 
             return await AcquisitionAsync(
-                catalog, options, urls, json, $"tags/{id}", tag.Name, page,
-                (size, index) => catalog.ByTagAsync(id, index, size, ct), ct, up: "tags");
+                catalog, owner, options, urls, json, $"tags/{id}", tag.Name, page,
+                (shelf, size, index) => catalog.ByTagAsync(shelf, id, index, size, ct), ct, up: "tags");
         });
 
-        group.MapGet("/book/{id:guid}", async (Guid id, CatalogService catalog, CancellationToken ct) =>
+        group.MapGet("/book/{id:guid}", async (Guid id, ClaimsPrincipal user, CatalogService catalog, CancellationToken ct) =>
         {
-            var book = await catalog.FindAsync(id, ct);
+            var book = await catalog.FindAsync(Identity.SubjectOf(user), id, ct);
 
             if (book is null)
             {
@@ -258,19 +271,20 @@ public static class OpdsEndpoints
 
     private static async Task<IResult> AcquisitionAsync(
         CatalogService catalog,
+        string owner,
         IOptions<BinderyOptions> options,
         CoreOpds.UrlBuilder urls,
         bool json,
         string path,
         string title,
         int? page,
-        Func<int, int, Task<Page<Domain.Book>>> query,
+        Func<string, int, int, Task<Page<Domain.Book>>> query,
         CancellationToken cancellationToken,
         string? up = null)
     {
         var size = options.Value.PageSize;
-        var result = await query(size, Math.Max(0, page ?? 0));
-        var updated = await catalog.LastModifiedAsync(cancellationToken);
+        var result = await query(owner, size, Math.Max(0, page ?? 0));
+        var updated = await catalog.LastModifiedAsync(owner, cancellationToken);
 
         var self = $"{urls.Root}/{path}";
         var separator = path.Contains('?') ? "&" : "?";
@@ -370,11 +384,12 @@ public static class OpdsEndpoints
     private static async Task<IResult> DownloadAsync(
         Guid id,
         string format,
+        ClaimsPrincipal user,
         CatalogService catalog,
         LibraryStore library,
         CancellationToken cancellationToken)
     {
-        var book = await catalog.FindAsync(id, cancellationToken);
+        var book = await catalog.FindAsync(Identity.SubjectOf(user), id, cancellationToken);
 
         if (book is null)
         {
@@ -411,11 +426,12 @@ public static class OpdsEndpoints
 
     private static async Task<IResult> ImageAsync(
         Guid id,
+        ClaimsPrincipal user,
         CatalogService catalog,
         LibraryStore library,
         CancellationToken cancellationToken)
     {
-        var entity = await catalog.FindEntityAsync(id, cancellationToken);
+        var entity = await catalog.FindEntityAsync(Identity.SubjectOf(user), id, cancellationToken);
 
         if (entity?.CoverPath is null)
         {
@@ -488,12 +504,22 @@ public static class OpdsEndpoints
             || Guid.TryParse(candidate, out bookId);
     }
 
-    /// <summary>The token that authenticated the request, or <see cref="Guid.Empty"/> for
-    /// the development principal, which has no token row at all.</summary>
-    private static Guid TokenIdOf(ClaimsPrincipal user) =>
-        Guid.TryParse(user.FindFirstValue(BinderyClaims.TokenId), out var tokenId)
-            ? tokenId
-            : Guid.Empty;
+    /// <summary>
+    /// The token that authenticated the request. A browser session has no token row, so it
+    /// gets a stable stand-in derived from the person — one per person, never one shared
+    /// by everyone signed in, which would let two people read each other's place.
+    /// </summary>
+    private static Guid TokenIdOf(ClaimsPrincipal user)
+    {
+        if (Guid.TryParse(user.FindFirstValue(BinderyClaims.TokenId), out var tokenId))
+        {
+            return tokenId;
+        }
+
+        var digest = System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes("bindery:session-progress:" + Identity.SubjectOf(user)));
+        return new Guid(digest.AsSpan(0, 16));
+    }
 
     private static async Task<IResult> ProgressPutAsync(
         ProgressPayload payload,
@@ -509,6 +535,7 @@ public static class OpdsEndpoints
         }
 
         var row = await progress.UpsertAsync(
+            Identity.SubjectOf(user),
             bookId,
             TokenIdOf(user),
             payload.Progress,
@@ -531,7 +558,7 @@ public static class OpdsEndpoints
             return Results.NotFound();
         }
 
-        var row = await progress.GetAsync(bookId, TokenIdOf(user), ct);
+        var row = await progress.GetAsync(Identity.SubjectOf(user), bookId, TokenIdOf(user), ct);
 
         return row is null ? Results.NotFound() : Results.Ok(ProgressResult(row));
     }

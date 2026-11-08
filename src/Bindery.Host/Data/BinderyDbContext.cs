@@ -24,6 +24,10 @@ public class BinderyDbContext(DbContextOptions<BinderyDbContext> options) : DbCo
 
     public DbSet<PluginSettingEntity> PluginSettings => Set<PluginSettingEntity>();
 
+    public DbSet<ShelfEntryEntity> Shelves => Set<ShelfEntryEntity>();
+
+    public DbSet<UserEntity> Users => Set<UserEntity>();
+
     public DbSet<FeedTokenEntity> FeedTokens => Set<FeedTokenEntity>();
     public DbSet<ReadProgressEntity> ReadProgress => Set<ReadProgressEntity>();
 
@@ -137,7 +141,34 @@ public class BinderyDbContext(DbContextOptions<BinderyDbContext> options) : DbCo
         });
 
         model.Entity<PluginSettingEntity>(setting =>
-            setting.HasIndex(s => new { s.Plugin, s.Key }).IsUnique());
+        {
+            // Two filtered indexes rather than one over (Plugin, Owner, Key): SQLite treats
+            // NULLs as distinct in a unique index, so a single index would not stop two
+            // install-scoped rows for the same key.
+            setting.HasIndex(s => new { s.Plugin, s.Key })
+                .IsUnique()
+                .HasFilter("\"Owner\" IS NULL");
+            setting.HasIndex(s => new { s.Plugin, s.Owner, s.Key })
+                .IsUnique()
+                .HasFilter("\"Owner\" IS NOT NULL");
+        });
+
+        model.Entity<ShelfEntryEntity>(entry =>
+        {
+            entry.HasKey(e => new { e.BookId, e.Owner });
+            entry.HasIndex(e => e.Owner);
+
+            entry.HasOne(e => e.Book)
+                .WithMany(b => b.Shelf)
+                .HasForeignKey(e => e.BookId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        model.Entity<UserEntity>(user =>
+        {
+            user.HasKey(u => u.Subject);
+            user.HasIndex(u => u.FirstSeenAt);
+        });
 
         model.Entity<FeedTokenEntity>(token =>
         {

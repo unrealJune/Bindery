@@ -117,15 +117,16 @@
             operator who opened a book to read it never sees a destructive control at rest.
         *@
         <details class="withdraw">
-            <summary>Withdraw from the volume</summary>
+            <summary>Withdraw from your shelf</summary>
             <p>
-                This deletes <strong>@book.Title</strong> and every file filed with it from the
-                library volume. The files are the library, so there is nothing to restore from
+                This takes <strong>@book.Title</strong> off your shelf. If nobody else keeps it,
+                every file filed with it is deleted from the library volume — the files are the
+                library, so there is nothing to restore from
                 afterwards@(book.SourceUrl.HasValue() ? " — though the source can be filed again from Intake." : ".")
             </p>
             <form method="post" asp-page-handler="Delete" asp-route-id="@book.Id">
                 <button class="button button-danger" type="submit">
-                    <span>Delete permanently</span>
+                    <span>Withdraw</span>
                     <small>@(book.Files.AsList().Count) file(s) on disk</small>
                 </button>
             </form>

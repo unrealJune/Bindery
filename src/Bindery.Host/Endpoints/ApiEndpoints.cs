@@ -34,32 +34,34 @@ public static class ApiEndpoints
                 : Results.BadRequest(new { error = result.Problem });
         });
 
-        api.MapGet("/downloads", async (DownloadService downloads, int? limit, CancellationToken ct) =>
-            Results.Ok((await downloads.RecentAsync(Math.Clamp(limit ?? 50, 1, 500), ct))
+        api.MapGet("/downloads", async (DownloadService downloads, ClaimsPrincipal user, int? limit, CancellationToken ct) =>
+            Results.Ok((await downloads.RecentAsync(Person.Of(user), Math.Clamp(limit ?? 50, 1, 500), ct))
                 .Select(job => JobView.From(job))));
 
-        api.MapGet("/downloads/{id:guid}", async (Guid id, DownloadService downloads, CancellationToken ct) =>
+        api.MapGet("/downloads/{id:guid}", async (Guid id, DownloadService downloads, ClaimsPrincipal user, CancellationToken ct) =>
         {
-            var job = await downloads.FindAsync(id, ct);
+            var job = await downloads.FindAsync(Person.Of(user), id, ct);
             return job is null ? Results.NotFound() : Results.Ok(JobView.From(job, includeLog: true));
         });
 
-        api.MapDelete("/downloads/{id:guid}", async (Guid id, DownloadService downloads, CancellationToken ct) =>
-            await downloads.CancelAsync(id, ct) ? Results.NoContent() : Results.NotFound());
+        api.MapDelete("/downloads/{id:guid}", async (Guid id, DownloadService downloads, ClaimsPrincipal user, CancellationToken ct) =>
+            await downloads.CancelAsync(Person.Of(user), id, ct) ? Results.NoContent() : Results.NotFound());
 
-        api.MapPost("/downloads/{id:guid}/retry", async (Guid id, DownloadService downloads, CancellationToken ct) =>
-            await downloads.RetryAsync(id, ct) ? Results.Accepted() : Results.NotFound());
+        api.MapPost("/downloads/{id:guid}/retry", async (Guid id, DownloadService downloads, ClaimsPrincipal user, CancellationToken ct) =>
+            await downloads.RetryAsync(Person.Of(user), id, ct) ? Results.Accepted() : Results.NotFound());
 
         // ------------------------------------------------------------ books
+        // Every book route is the caller's own shelf. Someone else's book is a 404.
 
-        api.MapGet("/books", async (CatalogService catalog, string? q, int? page, int? size, CancellationToken ct) =>
+        api.MapGet("/books", async (CatalogService catalog, ClaimsPrincipal user, string? q, int? page, int? size, CancellationToken ct) =>
         {
             var pageSize = Math.Clamp(size ?? 24, 1, 200);
             var index = Math.Max(0, page ?? 0);
+            var owner = Identity.SubjectOf(user);
 
             var result = string.IsNullOrWhiteSpace(q)
-                ? await catalog.RecentAsync(index, pageSize, ct)
-                : await catalog.SearchAsync(q, index, pageSize, ct);
+                ? await catalog.RecentAsync(owner, index, pageSize, ct)
+                : await catalog.SearchAsync(owner, q, index, pageSize, ct);
 
             return Results.Ok(new
             {
@@ -70,14 +72,14 @@ public static class ApiEndpoints
             });
         });
 
-        api.MapGet("/books/{id:guid}", async (Guid id, CatalogService catalog, CancellationToken ct) =>
+        api.MapGet("/books/{id:guid}", async (Guid id, CatalogService catalog, ClaimsPrincipal user, CancellationToken ct) =>
         {
-            var book = await catalog.FindAsync(id, ct);
+            var book = await catalog.FindAsync(Identity.SubjectOf(user), id, ct);
             return book is null ? Results.NotFound() : Results.Ok(BookView.From(book));
         });
 
-        api.MapDelete("/books/{id:guid}", async (Guid id, LibraryWriter writer, CancellationToken ct) =>
-            await writer.DeleteAsync(id, ct) ? Results.NoContent() : Results.NotFound());
+        api.MapDelete("/books/{id:guid}", async (Guid id, LibraryWriter writer, ClaimsPrincipal user, CancellationToken ct) =>
+            await writer.DeleteAsync(id, Identity.SubjectOf(user), ct) ? Results.NoContent() : Results.NotFound());
 
         api.MapPost("/books/{id:guid}/refresh", async (
             Guid id,
@@ -95,12 +97,13 @@ public static class ApiEndpoints
         // ------------------------------------------------------------ library
 
         api.MapPost("/library/scan", async (LibraryScanner scanner, CancellationToken ct) =>
-            Results.Ok(await scanner.ScanAsync(ct)));
+            Results.Ok(await scanner.ScanAsync(ct)))
+            .RequireAuthorization(AuthPolicies.Admin);
 
         // The form is read off HttpContext rather than bound with [FromForm]: minimal-API
         // form binding demands the antiforgery middleware, which Bindery does not run
         // because Razor Pages and the plugin proxy each handle their own token.
-        api.MapPost("/library/upload", async (HttpContext context, LibraryWriter writer, CancellationToken ct) =>
+        api.MapPost("/library/upload", async (HttpContext context, LibraryWriter writer, ClaimsPrincipal user, CancellationToken ct) =>
         {
             if (!context.Request.HasFormContentType)
             {
@@ -118,7 +121,7 @@ public static class ApiEndpoints
             await using var content = file.OpenReadStream();
 
             var result = await writer.ImportAsync(
-                content, file.FileName, form["title"], form["author"], ct);
+                Identity.SubjectOf(user), content, file.FileName, form["title"], form["author"], ct);
 
             return result.Accepted
                 ? Results.Created($"/api/books/{result.BookId}", new
@@ -145,15 +148,17 @@ public static class ApiEndpoints
             }
 
             return Results.Ok(PluginView.From(await registry.RefreshAsync(descriptor.Entry, ct)));
-        });
+        })
+        .RequireAuthorization(AuthPolicies.Admin);
 
         api.MapPost("/plugins/{name}/actions/{action}", async (
             string name,
             string action,
             [FromBody] Dictionary<string, string> input,
             PluginActionService actions,
+            ClaimsPrincipal user,
             CancellationToken ct) =>
-            Results.Ok(await actions.InvokeAsync(name, action, input, ct)));
+            Results.Ok(await actions.InvokeAsync(name, action, input, Person.Of(user), ct)));
 
         return builder;
     }

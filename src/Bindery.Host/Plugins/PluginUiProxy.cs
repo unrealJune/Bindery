@@ -40,11 +40,17 @@ public sealed record ProxiedDocument(
 /// rewriting looks tidy in a demo and then breaks at 2am on the one relative URL in the one
 /// attribute nobody thought about.
 /// </para>
+/// <para>
+/// Who is asking travels as <c>X-Bindery-User</c>/<c>X-Bindery-Role</c> (protocol §2.3), and
+/// a path the manifest lists in <c>ui.adminPaths</c> is refused to a member here, before the
+/// plugin sees the request. The plugin's own role check is the second lock, not the first.
+/// </para>
 /// </remarks>
 public sealed class PluginUiProxy(
     PluginClient client,
     PluginRegistry registry,
     FragmentSanitizer sanitizer,
+    PluginPseudonyms pseudonyms,
     IOptions<BinderyOptions> options,
     ILogger<PluginUiProxy> logger)
 {
@@ -93,6 +99,11 @@ public sealed class PluginUiProxy(
                 (int)HttpStatusCode.NotFound,
                 Notice($"{descriptor.DisplayName} does not provide its own interface."),
                 []);
+        }
+
+        if (IsRefused(descriptor, request, rest))
+        {
+            return new ProxiedFragment((int)HttpStatusCode.Forbidden, Notice(AdminOnly), []);
         }
 
         var basePath = BasePathFor(descriptor.Name);
@@ -153,6 +164,11 @@ public sealed class PluginUiProxy(
             return Refused(HttpStatusCode.NotFound, $"{descriptor.DisplayName} does not provide its own interface.");
         }
 
+        if (IsRefused(descriptor, request, rest))
+        {
+            return Refused(HttpStatusCode.Forbidden, AdminOnly);
+        }
+
         return await SendAsync(
             descriptor,
             request,
@@ -186,6 +202,13 @@ public sealed class PluginUiProxy(
             failure => Refused(HttpStatusCode.BadGateway, failure),
             cancellationToken);
     }
+
+    private const string AdminOnly = "Only an admin can open this page.";
+
+    /// <summary>An admin path (§6), asked for by someone who is not an admin.</summary>
+    private static bool IsRefused(PluginDescriptor descriptor, HttpRequest request, string rest) =>
+        descriptor.Manifest!.Ui.IsAdminPath("/" + rest)
+        && !Identity.IsAdmin(request.HttpContext.User);
 
     /// <summary>
     /// A refusal rendered as a minimal document, so the plugin's own panel shows the
@@ -226,6 +249,7 @@ public sealed class PluginUiProxy(
 
         upstream.Headers.Add("X-Bindery-Base", BasePathFor(descriptor.Name));
         upstream.Headers.Add("X-Bindery-Csrf", csrfToken);
+        pseudonyms.Apply(upstream, descriptor.Name, Person.Of(request.HttpContext.User));
 
         foreach (var header in ForwardedRequestHeaders)
         {
@@ -337,7 +361,12 @@ public sealed class PluginUiProxy(
         && !HttpMethods.IsHead(request.Method)
         && !HttpMethods.IsDelete(request.Method);
 
-    public IReadOnlyList<PluginNavEntry> NavigationFor(PluginDescriptor descriptor)
+    /// <summary>
+    /// The plugin's navigation entries a viewer may follow. An admin-only entry — declared so,
+    /// or pointing under an admin path — is not shown to a member at all; the proxy would
+    /// refuse it anyway, and a link that only ever says "no" is noise.
+    /// </summary>
+    public IReadOnlyList<PluginNavEntry> NavigationFor(PluginDescriptor descriptor, bool isAdmin)
     {
         if (descriptor.Manifest is null || !descriptor.Manifest.Ui.Mode.ServesHtml)
         {
@@ -345,11 +374,14 @@ public sealed class PluginUiProxy(
         }
 
         var basePath = BasePathFor(descriptor.Name);
-        var framed = descriptor.Manifest.Ui.Mode.RunsInFrame;
+        var ui = descriptor.Manifest.Ui;
+        var framed = ui.Mode.RunsInFrame;
 
         return
         [
-            .. descriptor.Manifest.Ui.Nav.AsList().Select(entry => new PluginNavEntry(
+            .. ui.Nav.AsList()
+                .Where(entry => isAdmin || (entry.Access.Permits(false) && !ui.IsAdminPath(entry.Path)))
+                .Select(entry => new PluginNavEntry(
                 descriptor.Name,
                 entry.Label,
                 // A sandboxed plugin's screens are linked through its desk page, never
@@ -367,8 +399,8 @@ public sealed class PluginUiProxy(
     }
 
     /// <summary>Everything the shell needs to render a plugin's navigation entries.</summary>
-    public IReadOnlyList<PluginNavEntry> AllNavigation() =>
-        [.. registry.Usable.SelectMany(NavigationFor)];
+    public IReadOnlyList<PluginNavEntry> AllNavigation(bool isAdmin) =>
+        [.. registry.Usable.SelectMany(descriptor => NavigationFor(descriptor, isAdmin))];
 }
 
 public sealed record PluginNavEntry(

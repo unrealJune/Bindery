@@ -97,6 +97,82 @@ let ``manifest parses an action schema`` () =
     Assert.Equal(ListOutput DownloadItem, action.Output)
     Assert.True (Assert.Single action.Input).Required
 
+[<Fact>]
+let ``manifest config scope defaults to install and fails closed to user`` () =
+    let manifest =
+        Manifest.parse
+            """{"protocolVersion":1,"name":"p","version":"1","config":[
+                 {"key":"agent","label":"Agent","type":"string"},
+                 {"key":"login","label":"Login","type":"string","scope":"user"},
+                 {"key":"shared","label":"Shared","type":"string","scope":"install"},
+                 {"key":"typo","label":"Typo","type":"secret","scope":"usr"}]}"""
+        |> ok
+
+    Assert.Equal<string list>([ "agent"; "shared" ], manifest.InstallConfig |> List.map (fun field -> field.Key))
+    // An unknown scope must never turn one person's password into everyone's.
+    Assert.Equal<string list>([ "login"; "typo" ], manifest.UserConfig |> List.map (fun field -> field.Key))
+
+[<Fact>]
+let ``manifest access defaults to member and fails closed to admin`` () =
+    let manifest =
+        Manifest.parse
+            """{"protocolVersion":1,"name":"p","version":"1",
+                "actions":[
+                  {"name":"look","label":"Look","output":{"kind":"text"}},
+                  {"name":"wipe","label":"Wipe","access":"admin","output":{"kind":"text"}},
+                  {"name":"oops","label":"Oops","access":"admn","output":{"kind":"text"}}],
+                "ui":{"mode":"sandboxed","nav":[
+                  {"label":"Home","path":"/"},
+                  {"label":"Sources","path":"/sources","access":"admin"}],
+                  "adminPaths":["/sources"]}}"""
+        |> ok
+
+    Assert.Equal<Access list>([ MemberAccess; AdminAccess; AdminAccess ], manifest.Actions |> List.map (fun a -> a.Access))
+    Assert.Equal<Access list>([ MemberAccess; AdminAccess ], manifest.Ui.Nav |> List.map (fun n -> n.Access))
+    Assert.Equal<string list>([ "/sources" ], manifest.Ui.AdminPaths)
+    Assert.True(MemberAccess.Permits false)
+    Assert.False(AdminAccess.Permits false)
+    Assert.True(AdminAccess.Permits true)
+
+let private uiWith adminPaths =
+    { Mode = Sandboxed
+      Entry = "/"
+      Nav = []
+      AdminPaths = adminPaths }
+
+[<Fact>]
+let ``an admin path covers itself and what is below it, not its neighbours`` () =
+    let ui = uiWith [ "/sources" ]
+
+    for path in [ "/sources"; "/sources/"; "/sources/3"; "sources"; "/sources?x=1" ] do
+        Assert.True(ui.IsAdminPath path, sprintf "%s should be admin" path)
+
+    for path in [ "/"; "/sourcesx"; "/chapters"; "/chapters/sources" ] do
+        Assert.False(ui.IsAdminPath path, sprintf "%s should not be admin" path)
+
+    Assert.False((uiWith []).IsAdminPath "/sources")
+
+[<Fact>]
+let ``an admin path cannot be dodged by spelling it differently`` () =
+    let ui = uiWith [ "/sources" ]
+
+    for path in
+        [ "/SOURCES"
+          "//sources"
+          "/./sources"
+          "/x/../sources"
+          "\\sources\\1"
+          "/%73ources"
+          "/%2573ources"
+          "/x%2F..%2Fsources" ] do
+        Assert.True(ui.IsAdminPath path, sprintf "%s should be admin" path)
+
+[<Fact>]
+let ``a root admin path reserves the whole interface`` () =
+    let ui = uiWith [ "/" ]
+    Assert.True(ui.IsAdminPath "/")
+    Assert.True(ui.IsAdminPath "/anything/at/all")
+
 // ---------------------------------------------------------------- events
 
 [<Fact>]

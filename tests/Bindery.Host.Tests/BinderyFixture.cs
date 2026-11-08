@@ -1,8 +1,15 @@
 using System.Net.Http.Json;
+using System.Security.Claims;
+using System.Text.Encodings.Web;
+using Bindery.Host.Security;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Bindery.Host.Tests;
 
@@ -13,7 +20,8 @@ namespace Bindery.Host.Tests;
 /// The host runs its real pipeline — real migrations, real EF Core over a real SQLite file,
 /// real background workers — because the interesting failures in this codebase live in the
 /// seams between those, not inside any one of them. Only authentication is dialled down,
-/// via the same <c>Auth:Mode=None</c> switch a developer uses locally.
+/// via the same <c>Auth:Mode=None</c> switch a developer uses locally — with its handler
+/// swapped for <see cref="TestUserHandler"/>, so a test can be someone other than "dev".
 /// </remarks>
 public sealed class BinderyFixture : IAsyncLifetime
 {
@@ -67,9 +75,18 @@ public sealed class BinderyFixture : IAsyncLifetime
             {
                 host.UseSetting(key, value);
             }
+
+            host.ConfigureTestServices(services =>
+                services.PostConfigure<AuthenticationOptions>(auth =>
+                    auth.SchemeMap[AuthSetup.DevSchemeName].HandlerType = typeof(TestUserHandler)));
         });
 
         Client = _factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+
+        // "dev" signs in first, so "dev" is the founder whatever order the tests run in.
+        using (await Client.GetAsync("/api/plugins"))
+        {
+        }
 
         // The registry is filled by a background service; nothing routes until it has run
         // once, so waiting here is the difference between a flaky suite and a real one.
@@ -101,6 +118,23 @@ public sealed class BinderyFixture : IAsyncLifetime
     }
 
     public IServiceScope CreateScope() => Services.CreateScope();
+
+    /// <summary>
+    /// A client signed in as someone else. No cookies and no redirects: each request says
+    /// who it is, which is all a test of who-sees-what needs.
+    /// </summary>
+    public HttpClient ClientFor(string subject, bool admin = false) =>
+        _factory!.CreateDefaultClient(new ActAs(subject, admin));
+
+    private sealed class ActAs(string subject, bool admin) : DelegatingHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            request.Headers.Add(TestUserHandler.UserHeader, subject);
+            request.Headers.Add(TestUserHandler.RoleHeader, admin ? BinderyClaims.AdminRole : BinderyClaims.MemberRole);
+            return base.SendAsync(request, cancellationToken);
+        }
+    }
 
     private async Task WaitForPluginAsync()
     {
@@ -150,6 +184,38 @@ public sealed record JsonElementJob(
     string? ErrorCode,
     string? ErrorMessage,
     Guid? BookId);
+
+/// <summary>
+/// The development handler, told who to be by a request header. Test-only: the shipped one
+/// is always "dev", and a header that chose an identity would be an authentication bypass.
+/// </summary>
+public sealed class TestUserHandler(
+    IOptionsMonitor<AuthenticationSchemeOptions> options,
+    ILoggerFactory logger,
+    UrlEncoder encoder) : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
+{
+    public const string UserHeader = "X-Test-User";
+    public const string RoleHeader = "X-Test-Role";
+
+    protected override Task<AuthenticateResult> HandleAuthenticateAsync()
+    {
+        var subject = Request.Headers[UserHeader].FirstOrDefault() ?? "dev";
+        var role = Request.Headers[RoleHeader].FirstOrDefault() ?? BinderyClaims.AdminRole;
+
+        var identity = new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.NameIdentifier, subject),
+                new Claim(ClaimTypes.Name, subject),
+                new Claim(BinderyClaims.CredentialKind, BinderyClaims.SessionCredential),
+                new Claim(BinderyClaims.Role, role)
+            ],
+            AuthSetup.DevSchemeName);
+
+        return Task.FromResult(
+            AuthenticateResult.Success(
+                new AuthenticationTicket(new ClaimsPrincipal(identity), AuthSetup.DevSchemeName)));
+    }
+}
 
 [CollectionDefinition(Name)]
 public sealed class BinderyCollection : ICollectionFixture<BinderyFixture>

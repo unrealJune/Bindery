@@ -17,6 +17,12 @@ from typing import Any, Callable, Iterator, Optional
 
 USER_AGENT = "Bindery-Conformance/1.0"
 
+# What the host sends on a request made for a person (PLUGIN-PROTOCOL.md §2.3). The suite
+# acts as an admin, the role that may reach every screen and action, so a plugin that
+# guards admin-only parts is still exercised in full. A check that wants a member says so.
+PERSON_HEADERS = {"X-Bindery-User": "conformance-person", "X-Bindery-Role": "admin"}
+PERSON_PATHS = ("/bindery/v1/ui", "/bindery/v1/actions")
+
 
 class Fail(Exception):
     """A conformance requirement was violated."""
@@ -78,6 +84,8 @@ class Client:
             hdrs["Content-Type"] = "application/json"
         if auth and self.token:
             hdrs["Authorization"] = f"Bearer {self.token}"
+        if path.startswith(PERSON_PATHS):
+            hdrs.update(PERSON_HEADERS)
         if headers:
             hdrs.update(headers)
         return urllib.request.Request(url, data=body, headers=hdrs, method=method.upper())

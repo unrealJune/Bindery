@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.IO.Compression;
 using System.Net;
 using System.Security.Cryptography;
@@ -43,6 +44,14 @@ public sealed class StubPlugin : IAsyncDisposable
 
     /// <summary>Requests seen, so a test can assert on what the host actually sent.</summary>
     public List<string> Seen { get; } = [];
+
+    /// <summary>
+    /// Who each request said it was acting for (protocol §2.3), and the config it carried —
+    /// so a test can assert one person's settings never reach another person's call.
+    /// </summary>
+    public ConcurrentQueue<Call> Calls { get; } = new();
+
+    public sealed record Call(string Request, string? User, string? Role, JsonObject? Config);
 
     /// <summary>Set to have every download fail with a retryable error.</summary>
     public bool FailDownloads { get; set; }
@@ -96,7 +105,37 @@ public sealed class StubPlugin : IAsyncDisposable
 
         app.Use(async (context, next) =>
         {
-            plugin!.Seen.Add($"{context.Request.Method} {context.Request.Path}{context.Request.QueryString}");
+            var request = $"{context.Request.Method} {context.Request.Path}{context.Request.QueryString}";
+            plugin!.Seen.Add(request);
+
+            JsonObject? config = null;
+
+            if (context.Request.ContentType?.Contains("json", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                context.Request.EnableBuffering();
+
+                using (var reader = new StreamReader(context.Request.Body, leaveOpen: true))
+                {
+                    var text = await reader.ReadToEndAsync();
+
+                    try
+                    {
+                        config = (JsonNode.Parse(text) as JsonObject)?["config"]?.DeepClone() as JsonObject;
+                    }
+                    catch (JsonException)
+                    {
+                    }
+                }
+
+                context.Request.Body.Position = 0;
+            }
+
+            plugin.Calls.Enqueue(new Call(
+                request,
+                context.Request.Headers["X-Bindery-User"].FirstOrDefault(),
+                context.Request.Headers["X-Bindery-Role"].FirstOrDefault(),
+                config));
+
             await next();
         });
 
@@ -151,6 +190,7 @@ public sealed class StubPlugin : IAsyncDisposable
                     status = "ok",
                     output = new { kind = "text", text = input?["text"]?.GetValue<string>() ?? string.Empty }
                 }),
+                "purge" => Results.Json(new { status = "ok", output = new { kind = "text", text = "purged" } }),
                 "search" => Results.Json(new
                 {
                     status = "ok",
@@ -245,7 +285,10 @@ public sealed class StubPlugin : IAsyncDisposable
             return;
         }
 
-        var workId = url[url.LastIndexOf('/')..].Trim('/');
+        // Like a real site, a chapter link names the same work as the work link does, and
+        // the plugin reports the canonical URL — not the one that was pasted.
+        var workId = url["https://stub.invalid/works/".Length..].Split('/')[0];
+        var canonical = $"https://stub.invalid/works/{workId}";
         var title = $"Stub Work {workId}";
         var author = config?["author_name"]?.GetValue<string>() ?? "A. Stub";
 
@@ -289,7 +332,7 @@ public sealed class StubPlugin : IAsyncDisposable
                 language = "en",
                 tags = new[] { "Stub" },
                 sourceId = $"stub:{workId}",
-                sourceUrl = url,
+                sourceUrl = canonical,
                 chapters = 2,
                 updated = UpdatedAt
             }
@@ -446,7 +489,7 @@ public sealed class StubPlugin : IAsyncDisposable
             "displayName": "Conformance Stub",
             "version": "1.0.0",
             "priority": -100,
-            "matches": ["^https?://stub\\.invalid/works/\\d+$"],
+            "matches": ["^https?://stub\\.invalid/works/\\d+(/chapters/\\d+)?$"],
             "formats": ["epub"],
             "capabilities": { "probe": true, "update": true, "metadata": true, "cover": true, "cancel": true, "circulation": true },
             "circulation": {
@@ -458,7 +501,8 @@ public sealed class StubPlugin : IAsyncDisposable
             },
             "config": [
               { "key": "author_name", "label": "Author to report", "type": "string" },
-              { "key": "api_key", "label": "Pretend API key", "type": "secret" }
+              { "key": "api_key", "label": "Pretend API key", "type": "secret" },
+              { "key": "reader_login", "label": "Your login", "type": "string", "scope": "user" }
             ],
             "actions": [
               { "name": "echo", "label": "Echo",
@@ -466,9 +510,14 @@ public sealed class StubPlugin : IAsyncDisposable
                 "output": { "kind": "text" } },
               { "name": "search", "label": "Search",
                 "input": [{ "key": "q", "label": "Query", "type": "string", "required": true }],
-                "output": { "kind": "list", "itemAction": "download" } }
+                "output": { "kind": "list", "itemAction": "download" } },
+              { "name": "purge", "label": "Purge", "access": "admin", "input": [], "output": { "kind": "text" } }
             ],
-            "ui": { "mode": "{{uiMode}}", "nav": [{ "label": "Stub", "path": "/" }] }
+            "ui": {
+              "mode": "{{uiMode}}",
+              "nav": [{ "label": "Stub", "path": "/" }, { "label": "Admin", "path": "/admin", "access": "admin" }],
+              "adminPaths": ["/admin"]
+            }
           }
           """;
 

@@ -49,8 +49,9 @@ degradation.
 | `HEDGEROW_DISCORD_TOKEN` | unset | Boot-time bot token fallback (see below). |
 | `HEDGEROW_DISCORD_CHANNELS` | unset | Boot-time channel-id fallback, comma-separated. |
 
-Everything a *user* configures — the bot token, channel IDs, the adult gate — is declared in
-the manifest's `config` and rendered by Bindery. The `HEDGEROW_DISCORD_*` variables exist
+Everything an admin configures — the bot token, channel IDs, the adult gate — is declared in
+the manifest's `config` and rendered by Bindery. All of it is `install`-scoped (protocol
+§4.1): there is one bot and one store, shared by everyone. The `HEDGEROW_DISCORD_*` variables exist
 only so an operator can bring the bot up at first boot before any download has carried the
 host-stored config in.
 
@@ -144,7 +145,7 @@ correctness. That is why nothing here retries.
 - **`forget`** — stop tracking a work: its ingested chapters and any channel bound to it are
   deleted. A book already filed in Bindery's library is **not** touched — the library is the
   host's, and a plugin reaching into it would be exactly the coupling the protocol prevents.
-  Deleting the filed book is done from Bindery's own book page.
+  Deleting the filed book is done from Bindery's own book page. Declared `access: "admin"`.
 
 ## The UI
 
@@ -167,6 +168,18 @@ Two screens:
 
 Even inside the sandbox, everything user-supplied is escaped before it reaches markup —
 defense in depth, and the conformance suite checks reflection.
+
+### Admins and members
+
+What Hedgerow holds is shared — every person's copy of the book is built from the same
+store — so changing it is an admin's job (protocol §2.3). A member sees **Chapters**
+read-only: the order and the sources, with no handle, pin box, or *Clear overrides*. The
+**Sources** screen, every mutating `/api/*` route, and `forget` are an admin's.
+
+`ADMIN_PATHS` in `app/manifest.py` is the single list: it is the manifest's `ui.adminPaths`,
+so Bindery refuses those paths to a member without forwarding them, and `main.py` checks
+`X-Bindery-Role` against the same list as a second lock. `/api/state` says `canEdit` so the
+frame knows which controls to draw, and leaves the bot and channel bindings out for members.
 
 ## Failure codes
 

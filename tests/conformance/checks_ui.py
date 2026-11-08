@@ -391,6 +391,32 @@ def _subresources(ctx: Ctx, body: str) -> list:
     return found
 
 
+@check("ui.admin-paths-check-the-role", group="ui",
+       requires=lambda ctx: ctx.ui_mode != "declarative"
+       and bool((ctx.manifest.get("ui") or {}).get("adminPaths")))
+def ui_admin_paths_check_the_role(ctx: Ctx) -> None:
+    """A member asking for an admin path is refused by the plugin too, not only the host.
+
+    Advisory: PLUGIN-PROTOCOL.md §2.3 makes the plugin's own check a SHOULD, because the
+    host already refuses these paths before forwarding. A plugin that answers 200 is
+    noted, not failed.
+    """
+    for prefix in (ctx.manifest.get("ui") or {}).get("adminPaths") or []:
+        resp = ctx.client.request(
+            "GET",
+            f"/bindery/v1/ui{prefix}",
+            headers={
+                "X-Bindery-Base": _base(ctx),
+                "X-Bindery-Csrf": "conformance-token",
+                "X-Bindery-User": "conformance-member",
+                "X-Bindery-Role": "member",
+            },
+            timeout=15,
+        )
+        if resp.status < 400:
+            ctx.note(f"{prefix} answered a member with {resp.status}; the plugin relies on the host alone")
+
+
 @check("ui.absent-when-declarative", group="ui", requires=lambda ctx: ctx.ui_mode == "declarative")
 def ui_absent_when_declarative(ctx: Ctx) -> None:
     """A declarative plugin exposes no UI endpoints; the host never proxies to it."""

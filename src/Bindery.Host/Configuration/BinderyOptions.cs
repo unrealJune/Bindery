@@ -202,6 +202,20 @@ public sealed class AuthOptions
     /// <summary>Claim to treat as the display name.</summary>
     public string NameClaim { get; set; } = "name";
 
+    /// <summary>
+    /// The claim that says who administers this installation. A group or role claim is the
+    /// usual choice; <c>email</c> or <c>sub</c> work too, for an identity provider without
+    /// groups.
+    /// </summary>
+    public string AdminClaim { get; set; } = "groups";
+
+    /// <summary>
+    /// Values of <see cref="AdminClaim"/> that make someone an admin, compared without
+    /// regard to case. When empty, the earliest person ever seen here is the admin — which
+    /// is what a single-person installation upgrading from before shelves already meant.
+    /// </summary>
+    public IList<string> AdminValues { get; set; } = new List<string>();
+
     public bool RequireHttpsMetadata { get; set; } = true;
 
     /// <summary>How long a signed-in browser session lasts.</summary>

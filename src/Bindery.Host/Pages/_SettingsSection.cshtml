@@ -1,0 +1,44 @@
+@model SettingsSectionView
+@{
+    var personal = Model.Scope is not null;
+}
+
+@* One section of a plugin's settings. The scope travels as a hidden field and the page
+   model re-checks it: posting the install section is refused to anyone but an admin. *@
+<form method="post" asp-page="/Plugins" asp-page-handler="Save" class="plugin-form">
+    <input type="hidden" name="plugin" value="@Model.Plugin" />
+    @if (personal)
+    {
+        <input type="hidden" name="scope" value="@Model.Scope" />
+        <h3>Your settings</h3>
+        <p class="field-help">Only you can see these. The plugin uses them when it works for you.</p>
+    }
+    else
+    {
+        <h3>Installation settings</h3>
+        <p class="field-help">Shared by everyone who uses this plugin. Only admins see this section.</p>
+    }
+    @foreach (var field in Model.Fields)
+    {
+        <partial name="_ConfigField" model="new ConfigFieldView(field, Model.Values.ValueFor(field.Key), Model.Values.IsSecretSet(field.Key))" />
+    }
+    <div class="form-actions">
+        <button class="button button-primary" type="submit"><span>@(personal ? "Save your settings" : "Save settings")</span></button>
+    </div>
+</form>
+
+@if (Model.Values.SecretsSet.Count > 0)
+{
+    <form method="post" asp-page="/Plugins" asp-page-handler="Clear" class="plugin-secrets">
+        <input type="hidden" name="plugin" value="@Model.Plugin" />
+        @if (personal)
+        {
+            <input type="hidden" name="scope" value="@Model.Scope" />
+        }
+        <span>Stored secrets:</span>
+        @foreach (var key in Model.Values.SecretsSet)
+        {
+            <button class="text-action danger" type="submit" name="key" value="@key">Clear @key</button>
+        }
+    </form>
+}

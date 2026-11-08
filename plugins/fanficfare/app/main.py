@@ -23,7 +23,7 @@ from pydantic import BaseModel, Field
 
 from . import fff, ui
 from .jobs import JobStore
-from .manifest import VERSION, build_manifest
+from .manifest import ADMIN_PATHS, VERSION, build_manifest
 
 logging.basicConfig(
     level=os.environ.get("BINDERY_LOG_LEVEL", "INFO").upper(),
@@ -228,8 +228,10 @@ async def ui_get(path: str, request: Request, url: Optional[str] = Query(default
                  q: Optional[str] = Query(default=None)) -> Response:
     base = _base(request)
     route = "/" + path.strip("/")
+    if _refused(route, request):
+        return _html(ui.admin_only(), status=403)
     if route == "/":
-        return _html(ui.home(base))
+        return _html(ui.home(base, _is_admin(request)))
     if route == "/check":
         return _html(ui.check(base, url))
     if route == "/sites":
@@ -242,11 +244,24 @@ async def ui_get(path: str, request: Request, url: Optional[str] = Query(default
 
 
 @app.post("/bindery/v1/ui/{path:path}", dependencies=[Depends(require_token)])
-async def ui_post(path: str, ini: str = Form(default="")) -> Response:
+async def ui_post(path: str, request: Request, ini: str = Form(default="")) -> Response:
     route = "/" + path.strip("/")
+    if _refused(route, request):
+        return _html(ui.admin_only(), status=403)
     if route == "/ini/validate":
         return _html(ui.ini_result(ini))
     return _html(ui.not_found(), status=404)
+
+
+def _is_admin(request: Request) -> bool:
+    # Absent means nobody is acting, which is never an admin (PLUGIN-PROTOCOL.md §2.3).
+    return (request.headers.get("x-bindery-role") or "").strip().lower() == "admin"
+
+
+def _refused(route: str, request: Request) -> bool:
+    """An admin path asked for by anyone but an admin."""
+    under = any(route == prefix or route.startswith(prefix + "/") for prefix in ADMIN_PATHS)
+    return under and not _is_admin(request)
 
 
 def _base(request: Request) -> str:

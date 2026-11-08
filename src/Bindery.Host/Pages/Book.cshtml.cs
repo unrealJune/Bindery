@@ -2,6 +2,7 @@ using Bindery.Core;
 using Bindery.Host.Catalog;
 using Bindery.Host.Downloads;
 using Bindery.Host.Library;
+using Bindery.Host.Security;
 using Bindery.Host.Ui;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -23,7 +24,7 @@ public sealed class BookModel(
 
     public async Task<IActionResult> OnGetAsync(Guid id, CancellationToken cancellationToken)
     {
-        var book = await catalog.FindAsync(id, cancellationToken);
+        var book = await catalog.FindAsync(Identity.SubjectOf(User), id, cancellationToken);
 
         if (book is null)
         {
@@ -31,9 +32,7 @@ public sealed class BookModel(
         }
 
         Book = book;
-
-        var recent = await downloads.RecentAsync(200, cancellationToken);
-        History = [.. recent.Where(job => job.BookId == id)];
+        History = await downloads.ForBookAsync(Person.Of(User), id, 50, cancellationToken);
 
         return Page();
     }
@@ -44,7 +43,7 @@ public sealed class BookModel(
     /// </summary>
     public async Task<IActionResult> OnPostRefreshAsync(Guid id, CancellationToken cancellationToken)
     {
-        var result = await downloads.EnqueueUpdateAsync(id, User.Identity?.Name, cancellationToken, Security.Identity.SubjectOf(User));
+        var result = await downloads.EnqueueUpdateAsync(id, User.Identity?.Name, cancellationToken, Identity.SubjectOf(User));
 
         TempData["Notice"] = result.Accepted
             ? "Update queued. Watch the job ledger."
@@ -56,26 +55,26 @@ public sealed class BookModel(
     }
 
     /// <summary>
-    /// Removes the book's files and its index rows.
+    /// Takes the book off this person's shelf, and deletes its files if nobody else has it.
     /// </summary>
     /// <remarks>
-    /// There is no undo and no trash: the volume is the library, so this really does delete
-    /// the files. The confirmation lives in the markup — a disclosure the operator has to
-    /// open before the button exists — rather than a dialog, because the UI ships no
-    /// JavaScript for this.
+    /// There is no undo and no trash: the volume is the library, so the last owner removing
+    /// a book really does delete the files. The confirmation lives in the markup — a
+    /// disclosure the operator has to open before the button exists — rather than a dialog,
+    /// because the UI ships no JavaScript for this. The notice is the same either way;
+    /// whether anyone else has the book is theirs to know.
     /// </remarks>
     public async Task<IActionResult> OnPostDeleteAsync(Guid id, CancellationToken cancellationToken)
     {
-        var book = await catalog.FindAsync(id, cancellationToken);
+        var owner = Identity.SubjectOf(User);
+        var book = await catalog.FindAsync(owner, id, cancellationToken);
 
-        if (book is null)
+        if (book is null || !await library.DeleteAsync(id, owner, cancellationToken))
         {
             return NotFound();
         }
 
-        await library.DeleteAsync(id, cancellationToken);
-
-        TempData["Notice"] = $"Removed “{book.Title}” from the volume.";
+        TempData["Notice"] = $"Removed “{book.Title}” from your shelf.";
         return RedirectToPage("/Library");
     }
 }

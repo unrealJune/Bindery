@@ -75,11 +75,15 @@ def url_patterns() -> list:
     return patterns
 
 
+# A login and an age confirmation belong to one person, so they are `user`-scoped
+# (PLUGIN-PROTOCOL.md §4.1): each person sets their own, and a download carries the
+# requester's. Everything else shapes how this installation fetches, and is the admin's.
 CONFIG = [
     {
         "key": "ao3_username",
         "label": "AO3 username",
         "type": "string",
+        "scope": "user",
         "help": "Only needed for works restricted to logged-in users.",
         "placeholder": "username",
     },
@@ -87,12 +91,14 @@ CONFIG = [
         "key": "ao3_password",
         "label": "AO3 password",
         "type": "secret",
+        "scope": "user",
         "help": "Stored encrypted by Bindery and sent only to this plugin.",
     },
     {
         "key": "is_adult",
         "label": "Confirm adult status",
         "type": "bool",
+        "scope": "user",
         "default": "false",
         "help": "Several sites gate mature works behind an age confirmation.",
     },
@@ -113,7 +119,11 @@ CONFIG = [
         "key": "personal_ini",
         "label": "personal.ini overrides",
         "type": "text",
-        "help": "FanFicFare configuration, applied on top of the fields above. Validate it under the plugin's own UI.",
+        "help": (
+            "FanFicFare configuration for everyone, applied on top of the fields above. Keep "
+            "logins out of it: each person's AO3 account is under their own settings. "
+            "Validate it under the plugin's own UI."
+        ),
         "placeholder": "[archiveofourown.org]\nusername:someone\n",
     },
 ]
@@ -139,13 +149,18 @@ ACTIONS = [
     }
 ]
 
+# personal.ini is installation config, so the screen for it is an admin's (§6). The host
+# refuses /ini to a member before forwarding; the role check in main.py is the second lock.
+ADMIN_PATHS = ["/ini"]
+
 UI = {
     "mode": "fragment",
     "nav": [
         {"label": "FanFicFare", "path": "/", "icon": "book"},
         {"label": "Supported sites", "path": "/sites", "icon": "globe"},
-        {"label": "personal.ini", "path": "/ini", "icon": "settings", "section": "settings"},
+        {"label": "personal.ini", "path": "/ini", "icon": "settings", "section": "settings", "access": "admin"},
     ],
+    "adminPaths": ADMIN_PATHS,
 }
 
 

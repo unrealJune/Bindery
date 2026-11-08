@@ -292,4 +292,14 @@ public sealed record SidecarMetadata
     public IReadOnlyList<PlacedFile> Files { get; init; } = [];
 
     public string? CoverPath { get; init; }
+
+    /// <summary>
+    /// Whose shelf this book is on. Null in a sidecar written before shelves existed — such
+    /// a book belongs to nobody yet and is adopted by the founder. Never written empty: when
+    /// the last owner lets a book go, its files go with it.
+    /// </summary>
+    public IReadOnlyList<SidecarOwner>? Owners { get; init; }
 }
+
+/// <summary>One entry of <see cref="SidecarMetadata.Owners"/>. A stored format, like its parent.</summary>
+public sealed record SidecarOwner(string Subject, DateTimeOffset AddedAt);

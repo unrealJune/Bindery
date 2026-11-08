@@ -20,27 +20,37 @@ public sealed record Page<T>(IReadOnlyList<T> Items, int Total, int PageIndex, i
 /// Reading the library.
 /// </summary>
 /// <remarks>
+/// <para>
 /// Everything here returns <c>Bindery.Core.Domain</c> types rather than EF entities, so
 /// that feed generation is a pure function of data and the OPDS serializers never see a
 /// tracked entity or a lazy load.
+/// </para>
+/// <para>
+/// Every method takes the owner whose catalog it is reading, and sees only the books on
+/// that person's shelf — groupings and counts included, so an author someone else reads
+/// does not appear as an empty entry in yours. There is deliberately no overload without
+/// one: the library is shared on disk, never in a catalog.
+/// </para>
 /// </remarks>
 public sealed class CatalogService(BinderyDbContext db)
 {
-    private IQueryable<BookEntity> Books =>
+    private IQueryable<BookEntity> Books(string owner) =>
         db.Books
             .AsNoTracking()
+            .Where(book => book.Shelf.Any(entry => entry.Owner == owner))
             .Include(book => book.Authors).ThenInclude(link => link.Author)
             .Include(book => book.Tags).ThenInclude(link => link.Tag)
             .Include(book => book.Files)
             .Include(book => book.Series);
 
-    public async Task<Page<Domain.Book>> RecentAsync(int page, int size, CancellationToken cancellationToken) =>
-        await PageAsync(Books.OrderByDescending(book => book.AddedAt), page, size, cancellationToken);
+    public async Task<Page<Domain.Book>> RecentAsync(string owner, int page, int size, CancellationToken cancellationToken) =>
+        await PageAsync(Books(owner).OrderByDescending(book => book.AddedAt), page, size, cancellationToken);
 
-    public async Task<Page<Domain.Book>> AllAsync(int page, int size, CancellationToken cancellationToken) =>
-        await PageAsync(Books.OrderBy(book => book.SortTitle), page, size, cancellationToken);
+    public async Task<Page<Domain.Book>> AllAsync(string owner, int page, int size, CancellationToken cancellationToken) =>
+        await PageAsync(Books(owner).OrderBy(book => book.SortTitle), page, size, cancellationToken);
 
     public async Task<Page<Domain.Book>> SearchAsync(
+        string owner,
         string query,
         int page,
         int size,
@@ -57,7 +67,7 @@ public sealed class CatalogService(BinderyDbContext db)
 
         // LIKE over three columns rather than FTS: the library is thousands of rows, not
         // millions, and full-text search is explicitly out of scope for v1 (PLAN.md §10).
-        var matches = Books.Where(book =>
+        var matches = Books(owner).Where(book =>
             EF.Functions.Like(book.Title, pattern)
             || (book.Summary != null && EF.Functions.Like(book.Summary, pattern))
             || book.Authors.Any(link => EF.Functions.Like(link.Author.Name, pattern))
@@ -68,97 +78,147 @@ public sealed class CatalogService(BinderyDbContext db)
     }
 
     public async Task<Page<Domain.Book>> ByAuthorAsync(
+        string owner,
         int authorId,
         int page,
         int size,
         CancellationToken cancellationToken) =>
         await PageAsync(
-            Books.Where(book => book.Authors.Any(link => link.AuthorId == authorId))
+            Books(owner).Where(book => book.Authors.Any(link => link.AuthorId == authorId))
                  .OrderBy(book => book.SortTitle),
             page,
             size,
             cancellationToken);
 
     public async Task<Page<Domain.Book>> ByTagAsync(
+        string owner,
         int tagId,
         int page,
         int size,
         CancellationToken cancellationToken) =>
         await PageAsync(
-            Books.Where(book => book.Tags.Any(link => link.TagId == tagId)).OrderBy(book => book.SortTitle),
+            Books(owner).Where(book => book.Tags.Any(link => link.TagId == tagId)).OrderBy(book => book.SortTitle),
             page,
             size,
             cancellationToken);
 
     public async Task<Page<Domain.Book>> BySeriesAsync(
+        string owner,
         int seriesId,
         int page,
         int size,
         CancellationToken cancellationToken) =>
         await PageAsync(
-            Books.Where(book => book.SeriesId == seriesId)
+            Books(owner).Where(book => book.SeriesId == seriesId)
                  .OrderBy(book => book.SeriesIndex ?? double.MaxValue)
                  .ThenBy(book => book.SortTitle),
             page,
             size,
             cancellationToken);
 
-    public async Task<Domain.Book?> FindAsync(Guid id, CancellationToken cancellationToken)
+    /// <summary>A book on <paramref name="owner"/>'s shelf; null for any other, existing or not.</summary>
+    public async Task<Domain.Book?> FindAsync(string owner, Guid id, CancellationToken cancellationToken)
     {
-        var entity = await Books.FirstOrDefaultAsync(book => book.Id == id, cancellationToken);
+        var entity = await Books(owner).FirstOrDefaultAsync(book => book.Id == id, cancellationToken);
         return entity is null ? null : Map(entity);
     }
 
-    public Task<BookEntity?> FindEntityAsync(Guid id, CancellationToken cancellationToken) =>
-        Books.FirstOrDefaultAsync(book => book.Id == id, cancellationToken);
+    public Task<BookEntity?> FindEntityAsync(string owner, Guid id, CancellationToken cancellationToken) =>
+        Books(owner).FirstOrDefaultAsync(book => book.Id == id, cancellationToken);
 
-    public Task<int> CountAsync(CancellationToken cancellationToken) => db.Books.CountAsync(cancellationToken);
+    public Task<int> CountAsync(string owner, CancellationToken cancellationToken) =>
+        db.Books.CountAsync(book => book.Shelf.Any(entry => entry.Owner == owner), cancellationToken);
 
-    public async Task<IReadOnlyList<Domain.Grouping>> AuthorsAsync(CancellationToken cancellationToken) =>
+    public async Task<IReadOnlyList<Domain.Grouping>> AuthorsAsync(string owner, CancellationToken cancellationToken) =>
         await db.Authors
             .AsNoTracking()
-            .Where(author => author.Books.Count > 0)
+            .Select(author => new
+            {
+                author.Id,
+                author.Name,
+                author.SortName,
+                Count = author.Books.Count(link => link.Book.Shelf.Any(entry => entry.Owner == owner))
+            })
+            .Where(author => author.Count > 0)
             .OrderBy(author => author.SortName)
-            .Select(author => new { author.Id, author.Name, author.SortName, Count = author.Books.Count })
             .Select(author => new Domain.Grouping(
                 author.Id.ToString(), author.Name, author.SortName, author.Count))
             .ToListAsync(cancellationToken);
 
-    public async Task<IReadOnlyList<Domain.Grouping>> TagsAsync(CancellationToken cancellationToken) =>
+    public async Task<IReadOnlyList<Domain.Grouping>> TagsAsync(string owner, CancellationToken cancellationToken) =>
         await db.Tags
             .AsNoTracking()
-            .Where(tag => tag.Books.Count > 0)
+            .Select(tag => new
+            {
+                tag.Id,
+                tag.Name,
+                Count = tag.Books.Count(link => link.Book.Shelf.Any(entry => entry.Owner == owner))
+            })
+            .Where(tag => tag.Count > 0)
             .OrderBy(tag => tag.Name)
-            .Select(tag => new Domain.Grouping(tag.Id.ToString(), tag.Name, tag.Name, tag.Books.Count))
+            .Select(tag => new Domain.Grouping(tag.Id.ToString(), tag.Name, tag.Name, tag.Count))
             .ToListAsync(cancellationToken);
 
-    public async Task<IReadOnlyList<Domain.Grouping>> SeriesAsync(CancellationToken cancellationToken) =>
+    public async Task<IReadOnlyList<Domain.Grouping>> SeriesAsync(string owner, CancellationToken cancellationToken) =>
         await db.Series
             .AsNoTracking()
-            .Where(series => series.Books.Count > 0)
+            .Select(series => new
+            {
+                series.Id,
+                series.Name,
+                Count = series.Books.Count(book => book.Shelf.Any(entry => entry.Owner == owner))
+            })
+            .Where(series => series.Count > 0)
             .OrderBy(series => series.Name)
             .Select(series => new Domain.Grouping(
-                series.Id.ToString(), series.Name, series.Name, series.Books.Count))
+                series.Id.ToString(), series.Name, series.Name, series.Count))
             .ToListAsync(cancellationToken);
 
-    public Task<AuthorEntity?> FindAuthorAsync(int id, CancellationToken cancellationToken) =>
-        db.Authors.AsNoTracking().FirstOrDefaultAsync(author => author.Id == id, cancellationToken);
+    /// <summary>
+    /// An author with at least one book on <paramref name="owner"/>'s shelf. Someone else's
+    /// author is as absent as one that does not exist, so ids cannot be probed.
+    /// </summary>
+    public Task<AuthorEntity?> FindAuthorAsync(string owner, int id, CancellationToken cancellationToken) =>
+        db.Authors.AsNoTracking().FirstOrDefaultAsync(
+            author => author.Id == id
+                && author.Books.Any(link => link.Book.Shelf.Any(entry => entry.Owner == owner)),
+            cancellationToken);
 
-    public Task<TagEntity?> FindTagAsync(int id, CancellationToken cancellationToken) =>
-        db.Tags.AsNoTracking().FirstOrDefaultAsync(tag => tag.Id == id, cancellationToken);
+    public Task<TagEntity?> FindTagAsync(string owner, int id, CancellationToken cancellationToken) =>
+        db.Tags.AsNoTracking().FirstOrDefaultAsync(
+            tag => tag.Id == id
+                && tag.Books.Any(link => link.Book.Shelf.Any(entry => entry.Owner == owner)),
+            cancellationToken);
 
-    public Task<SeriesEntity?> FindSeriesAsync(int id, CancellationToken cancellationToken) =>
-        db.Series.AsNoTracking().FirstOrDefaultAsync(series => series.Id == id, cancellationToken);
+    public Task<SeriesEntity?> FindSeriesAsync(string owner, int id, CancellationToken cancellationToken) =>
+        db.Series.AsNoTracking().FirstOrDefaultAsync(
+            series => series.Id == id
+                && series.Books.Any(book => book.Shelf.Any(entry => entry.Owner == owner)),
+            cancellationToken);
 
-    /// <summary>The most recent change to anything, used as a feed's <c>updated</c>.</summary>
-    public async Task<DateTimeOffset> LastModifiedAsync(CancellationToken cancellationToken)
+    /// <summary>
+    /// The most recent change to anything on this shelf, used as a feed's <c>updated</c>.
+    /// </summary>
+    /// <remarks>
+    /// Shelving a book someone else already had changes this person's catalog without
+    /// changing the book, so the shelf entry's own time counts too — otherwise a reader
+    /// caching on <c>updated</c> would never see it arrive.
+    /// </remarks>
+    public async Task<DateTimeOffset> LastModifiedAsync(string owner, CancellationToken cancellationToken)
     {
-        var latest = await db.Books
-            .AsNoTracking()
-            .OrderByDescending(book => book.UpdatedAt)
-            .Select(book => (DateTimeOffset?)book.UpdatedAt)
+        var entries = db.Shelves.AsNoTracking().Where(entry => entry.Owner == owner);
+
+        var bookChanged = await entries
+            .OrderByDescending(entry => entry.Book.UpdatedAt)
+            .Select(entry => (DateTimeOffset?)entry.Book.UpdatedAt)
             .FirstOrDefaultAsync(cancellationToken);
 
+        var shelved = await entries
+            .OrderByDescending(entry => entry.AddedAt)
+            .Select(entry => (DateTimeOffset?)entry.AddedAt)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var latest = bookChanged > shelved ? bookChanged : shelved ?? bookChanged;
         return latest ?? DateTimeOffset.UnixEpoch;
     }
 

@@ -300,8 +300,19 @@ running Bindery at all.
 
 ## 10. Explicitly out of scope for v1
 
-Watch folder / bulk import · read-progress sync · multi-user libraries · calibre-style
-metadata editing · full-text search · plugin marketplace or registry.
+Watch folder / bulk import · read-progress sync · calibre-style metadata editing ·
+full-text search · plugin marketplace or registry.
+
+**Several people per installation has since shipped.** Each person has a *shelf* — their
+view onto one shared set of files — plus their own feed tokens, reading progress, download
+history, circulation accounts, and user-scoped plugin config. A book two people download is
+filed once and shelved twice; withdrawing it removes your shelf entry, and the files only
+when nobody else holds it. Shelves are recorded in each book's sidecar (`owners`) as well as
+in SQLite, so a rescan rebuilds them. Admins come from an OIDC claim
+(`Auth:AdminClaim`/`AdminValues`), defaulting to the first person ever seen; plugins learn
+who is acting through `X-Bindery-User`/`X-Bindery-Role` (protocol §2.3). What stays out:
+separate libraries per person, sharing a book *with* someone from the UI, and per-person
+quotas.
 
 Depositing *one* file through the UI is in — it is the same filing path a download ends in,
 minus the plugin — and so is withdrawing a book. What stays out is the unattended half: a

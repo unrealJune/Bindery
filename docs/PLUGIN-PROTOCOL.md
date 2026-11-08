@@ -67,7 +67,46 @@ The mechanism does not change between `mode: sidecar` (localhost) and `mode: ser
 | `X-Bindery-Csrf` | UI requests | Opaque; a plugin **MUST NOT** need to interpret it |
 | `X-Bindery-Notify` | every `/bindery/v1` request | Absolute URL for change notifications (§3.7). Absent when the host accepts none |
 | `X-Bindery-Notify-Token` | every `/bindery/v1` request | Bearer token for that URL. **MUST NOT** be logged |
+| `X-Bindery-User` | UI, action, `download`, circulation — when a person is acting (§2.3) | Opaque, stable pseudonym for that person |
+| `X-Bindery-Role` | whenever `X-Bindery-User` is sent | `admin` or `member` (§2.3) |
 | `User-Agent` | every request | `Bindery/<version>` |
+
+### 2.3 People
+
+One Bindery serves several people. Each has their own shelf, their own e-readers, and their
+own circulation accounts; some of them are **admins**, who administer the installation —
+its plugins, its shared configuration, and its library volume. Which people are admins is
+the host's business (it comes from the identity provider) and is never the plugin's.
+
+A request made on a person's behalf carries who they are:
+
+- `X-Bindery-User` is an opaque pseudonym for the person. It is **stable** — the same
+  person always produces the same value for the same plugin, across host restarts — and it
+  is **per plugin**, so two plugins cannot correlate their users with each other. A plugin
+  **MAY** key per-person state on it and **MUST NOT** try to interpret it. It is not an
+  email, a name, or the identity provider's subject.
+- `X-Bindery-Role` is `admin` or `member`. A plugin **MAY** rely on it to refuse an
+  operation to a member, and **SHOULD** do so for any screen or endpoint that changes what
+  every person sees. The host also enforces the declarations in §5 and §6, so the header is
+  defence in depth rather than the only gate.
+
+Both headers are **absent** when no person is acting — a background job nobody asked for.
+A plugin **MUST** treat that as "no person", not as an admin. Neither header is ever taken
+from the browser: the host sets them itself and drops any a client sends.
+
+Which requests act for a person, and with what role:
+
+| Request | Acts for | `X-Bindery-Role` |
+|---|---|---|
+| UI (§6) | the signed-in person viewing the plugin | theirs |
+| Action (§5) | the person who invoked it | theirs |
+| `download` | the person who queued it; for an unattended update, the earliest person holding the book on their shelf, whose user-scoped `config` (§4) is also the one sent | always `member` |
+| Circulation (§3.8) | the owner of the account the call carries | always `member` |
+
+A download or circulation call is never an administrative operation, and most run long
+after anyone was present to hold a role — so the host sends `member` for them regardless of
+who the person is. A plugin that wants to know whether someone is an admin learns it from a
+UI or action request, never from these.
 
 ---
 
@@ -206,7 +245,7 @@ Request:
 |---|---|---|---|
 | `jobId` | string | yes | Host-generated UUID. Scopes artifacts and cancellation. Unique per attempt — a retry is a new `jobId`. |
 | `url` | string | yes | The URL the user pasted, unmodified. |
-| `config` | object | yes | Flat string map of the plugin's own `config` keys. Absent keys mean unset. Secrets arrive in cleartext over the plugin connection; they are encrypted at rest on the host. |
+| `config` | object | yes | Flat string map of the plugin's own `config` keys: install-scoped values overlaid with the acting person's user-scoped ones (§4.1). Absent keys mean unset. Secrets arrive in cleartext over the plugin connection; they are encrypted at rest on the host. |
 | `options.update` | bool | no | `true` means "this is a refresh of a book already in the library". A plugin without `capabilities.update` **MUST** treat it as a normal download. |
 | `options.knownSourceId` | string\|null | no | The `sourceId` the host already holds for this book, when updating. |
 | `options.knownUpdated` | string\|null | no | RFC 3339 timestamp of what the host already holds. A plugin **MAY** answer `unchanged` without downloading. |
@@ -426,10 +465,11 @@ well-formed `result` of `status: "error"`, `code: "unsupported_url"`.
 #### Accounts
 
 Library credentials belong to a *person*, not to the installation — two people in one
-household have two cards, and one person may have cards at two library systems. So, unlike
-`config` (§4), which is one set of values for the whole plugin, circulation is driven by
-**accounts**: the host lets each signed-in person connect any number of accounts to a
-circulation plugin, using a field schema the plugin declares.
+household have two cards, and one person may have cards at two library systems. A
+user-scoped `config` field (§4.1) gives each person one value; circulation needs *any
+number*, so it is driven by **accounts**: the host lets each signed-in person connect any
+number of accounts to a circulation plugin, using a field schema the plugin declares.
+Every circulation call carries the account owner's `X-Bindery-User` (§2.3).
 
 ```jsonc
 "circulation": {
@@ -644,6 +684,7 @@ call. A `declarative` plugin ships no HTML for this.
 | `options` | for `select` | Array of `{ "value": "...", "label": "..." }`. |
 | `min` / `max` | no | Numeric bounds for `int`; length bounds for `string`/`text`. |
 | `pattern` | no | Regex the value must match. Validated host-side. |
+| `scope` | no | `install` (default) or `user`. §4.1. |
 
 | `type` | Rendered as | Sent as |
 |---|---|---|
@@ -662,6 +703,28 @@ keeps plugin-side parsing trivial in every language.
 back into HTML in cleartext — the UI shows "set" or "not set" and offers replacement. It is
 sent to the plugin in cleartext because the plugin needs it to log in; that connection is
 in-pod (`sidecar`) or in-cluster (`service`).
+
+### 4.1 Scope
+
+Some settings describe the installation — a user agent, a rate limit, a shared source list.
+Others belong to a person — their own login on the site the plugin downloads from. `scope`
+says which:
+
+- **`install`** (the default) — one value for the whole installation. Only an admin (§2.3)
+  can change it, and every person's requests carry it.
+- **`user`** — each person sets their own value, and only their own. The host stores it per
+  person, with the same at-rest encryption for `secret`, and never shows one person's value
+  to another — not even to an admin.
+
+The `config` object a plugin receives stays one flat map: every install-scoped value, then
+the acting person's (§2.3) user-scoped values over the top. A user-scoped key the person
+has not set is absent, never filled in from someone else. When no person is acting, the
+request carries install-scoped values only. An unrecognized `scope` is treated as `user`,
+so a typo never shares one person's value with everyone.
+
+`scope` applies to `config` alone. Action `input` (§5) is per call and circulation
+`accountFields` (§3.8) are per account, so both are already a person's own; a host
+**MUST** ignore `scope` on them.
 
 ---
 
@@ -686,6 +749,10 @@ Manifest:
 - `output.kind` — `list`, `text`, or `message`.
 - `output.itemAction` — for `list` only. `download` renders each item's `url` with a
   "Download" button; `none` renders items inertly. Default `none`.
+- `access` — `member` (default) or `admin`. An `admin` action changes something every
+  person sees; the host **MUST** refuse to invoke it for anyone but an admin (§2.3) and
+  **SHOULD NOT** offer it to them. An unrecognized value is treated as `admin` — a typo
+  fails closed.
 
 Invocation — `POST /bindery/v1/actions/{name}`:
 
@@ -723,6 +790,16 @@ In protocol terms:
   forwarding method, query string, and body.
 - `X-Bindery-Base` carries the public path prefix the UI is mounted at. Bindery **does not**
   rewrite attributes in a response, in either mode.
+- `X-Bindery-User` and `X-Bindery-Role` identify the person viewing it (§2.3). A UI
+  request always has one.
+- `ui.adminPaths` is an optional array of path prefixes — `"/sources"` — reserved for
+  admins. The host **MUST** answer a member's request for one with `403` without
+  forwarding it. A prefix matches the path itself and anything below it (`/sources` and
+  `/sources/3`, not `/sourcesx`), compared after the host has normalized the path.
+- A `ui.nav` entry **MAY** carry `access`: `member` (default) or `admin` (an unrecognized
+  value is `admin`). An `admin` entry is not linked for members. This is visibility only — a
+  screen is protected by listing it in `adminPaths`, and a plugin **SHOULD** also check
+  `X-Bindery-Role` itself.
 
 ### 6.1 `mode: "sandboxed"` — the recommended tier
 
@@ -839,3 +916,4 @@ not a framework, not a base image.
 | 1 (additive) | `capabilities.notify` and §3.7 added — a plugin that learns of new content out-of-band may POST a contentless hint to Bindery, which decides whether to queue an update. No version bump: the capability defaults to `false`, the advertising headers are optional, and a host that serves no endpoint simply omits them. The host's update schedule remains the backstop, so the feature is an optimization and never a correctness requirement. |
 | 1 (additive) | `capabilities.circulation`, the manifest's `circulation` block, and §3.8 added — library search, holds, and loans, with per-person accounts and an explicit `physical`/`digital` medium on every item. New error codes `not_holdable`, `already_held`, `hold_limit`, `account_blocked`; older hosts already treat unknown codes as `internal`. No version bump: the capability defaults to `false`, a host that does not implement it never calls the new endpoints, and a circulation plugin still serves every required endpoint. |
 | 1 (additive) | `ui.mode: "sandboxed"` added — a full document in an opaque-origin iframe, plugin JavaScript permitted, host communication via the `postMessage` bridge. `fragment` deprecated but unchanged. `iframe` becomes a deprecated alias for `sandboxed`. No version bump: unknown `ui.mode` values already degrade to `declarative`. |
+| 1 (additive) | Several people per installation (§2.3). New headers `X-Bindery-User` and `X-Bindery-Role`; config `scope` (§4.1); `access` on actions and `ui.nav` entries; `ui.adminPaths`. No version bump: every new member is optional with a default that reproduces the old behaviour — `scope` defaults to `install`, `access` to `member` — and an older plugin that ignores the headers still works, with all of its configuration shared as before. |

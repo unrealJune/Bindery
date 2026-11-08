@@ -53,13 +53,13 @@ Three durable claims:
 |---|---|
 | `Configuration/` | `BinderyOptions` — everything configurable, bound from `Bindery__*` |
 | `Data/` | EF Core entities, `BinderyDbContext`, migrations |
-| `Library/` | `LibraryStore` writes and reads the book directory; `LibraryScanner` reindexes it |
+| `Library/` | `LibraryStore` writes and reads the book directory; `LibraryScanner` reindexes it; `ShelfService` says whose shelf each book is on |
 | `Catalog/` | Paging, search and grouping queries behind both the UI and the feeds |
 | `Downloads/` | The queue, the worker, and the runner that drives one job to completion |
 | `Plugins/` | Registry, resolver, HTTP client, settings store, UI proxy |
 | `Opds/` | The feed endpoints and URL construction |
 | `Endpoints/` | The JSON API used by the UI |
-| `Security/` | OIDC setup, feed tokens, fragment sanitizer, security headers |
+| `Security/` | OIDC setup, roles and the user directory, feed tokens, fragment sanitizer, security headers |
 | `Pages/` | Razor Pages and htmx partials |
 
 ## The acquisition path
@@ -98,6 +98,31 @@ sides.
 Authentication has two doors. The UI uses OIDC and a session cookie. Ereaders cannot do a
 redirect flow, so feed endpoints also accept a long-lived feed token; tokens are stored
 hashed and compared in constant time.
+
+## People and shelves
+
+Files are shared; views are not. One book directory holds each work once, and a *shelf*
+(`ShelfEntries`: owner × book) says who holds it. Every catalog query, feed, cover, file
+download, and progress record is filtered through the asking person's shelf, so another
+person's book is simply a 404 — not a 403 that would confirm it exists. A feed token reads
+its owner's shelf and nothing else.
+
+Shelves are also written into each book's sidecar as `owners`, so the database stays a
+rebuildable index: a rescan restores them. A book with no owner recorded (anything filed
+before shelves existed) is adopted by the founder — the earliest person ever seen — at boot
+and on that person's first sign-in.
+
+Withdrawing a book removes it from your shelf; the files are deleted only when the last
+owner lets go. A download of something already in the library adds it to the requester's
+shelf without touching the files. Jobs belong to whoever queued them; an unattended update
+belongs to nobody and is visible to everyone holding that book.
+
+Admins (`Auth:AdminClaim`/`AdminValues`, evaluated on every request against the group
+claims issued at sign-in — so a config change applies at once, but removing someone from
+the group at the identity provider applies when they next sign in or their session ends) manage plugins and their installation settings,
+rescans, and admin-only plugin actions and screens. Plugins are told who is acting by
+`X-Bindery-User` — an HMAC pseudonym, distinct per plugin, never the OIDC subject — and
+`X-Bindery-Role` (protocol §2.3).
 
 ## Plugin UI
 

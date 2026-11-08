@@ -121,4 +121,15 @@ public static class BinderyClaims
     public const string FeedTokenCredential = "feed-token";
 
     public const string SessionCredential = "session";
+
+    /// <summary>
+    /// What a person may do here: <see cref="AdminRole"/> or <see cref="MemberRole"/>.
+    /// Derived on every request by <c>BinderyClaimsTransformation</c>, never trusted from a
+    /// cookie, so revoking someone's admin group takes effect without signing them out.
+    /// </summary>
+    public const string Role = "bindery:role";
+
+    public const string AdminRole = "admin";
+
+    public const string MemberRole = "member";
 }

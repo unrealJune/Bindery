@@ -74,7 +74,7 @@ public sealed class CirculationAccountStore(
         var entity = new CirculationAccountEntity { Owner = owner, Plugin = plugin };
         var fields = Normalize(spec, submitted, existing: null);
 
-        var verified = await VerifyAsync(descriptor, entity.Id, fields, cancellationToken);
+        var verified = await VerifyAsync(descriptor, owner, entity.Id, fields, cancellationToken);
 
         if (verified.Problem is not null)
         {
@@ -128,7 +128,7 @@ public sealed class CirculationAccountStore(
         }
 
         var fields = Normalize(spec, submitted, existing);
-        var verified = await VerifyAsync(descriptor, entity.Id, fields, cancellationToken);
+        var verified = await VerifyAsync(descriptor, owner, entity.Id, fields, cancellationToken);
 
         if (verified.Problem is not null)
         {
@@ -233,6 +233,7 @@ public sealed class CirculationAccountStore(
 
     private async Task<(CirculationCore.Verified? Value, string? Problem)> VerifyAsync(
         PluginDescriptor descriptor,
+        string owner,
         Guid accountId,
         IReadOnlyDictionary<string, string> fields,
         CancellationToken cancellationToken)
@@ -240,7 +241,7 @@ public sealed class CirculationAccountStore(
         try
         {
             var reply = await client.VerifyAccountAsync(
-                descriptor.Entry, new CirculationCore.Account(accountId.ToString("D"), fields.ToFSharpMap()), cancellationToken);
+                descriptor.Entry, owner, new CirculationCore.Account(accountId.ToString("D"), fields.ToFSharpMap()), cancellationToken);
 
             return reply switch
             {

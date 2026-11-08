@@ -129,6 +129,9 @@ h2 { font-size: 1.05rem; margin: 0 0 8px; }
 .hg-chapter:active { cursor: grabbing; }
 .hg-chapter.dragging { opacity: 0.5; }
 .hg-chapter.drop-target { border-color: var(--hg-accent); border-style: dashed; }
+/* A member's view: no handle, no pin box, nothing to grab. */
+.hg-chapter.hg-readonly { grid-template-columns: 1fr auto; cursor: default; }
+.hg-chapter.hg-readonly:active { cursor: default; }
 
 .hg-handle { color: var(--hg-muted); font-size: 1.1rem; user-select: none; }
 .hg-title { font-weight: 500; }

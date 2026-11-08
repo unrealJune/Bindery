@@ -102,6 +102,9 @@
 
   var app = document.getElementById("app");
   var selectedWork = null;
+  // Whether this person may change the shared order. The backend says so in /api/state and
+  // enforces it, as does Bindery; this only decides whether to offer the controls.
+  var canEdit = false;
 
   // ---- routing ------------------------------------------------------------
 
@@ -116,6 +119,7 @@
     request("GET", "/api/state").then(function (r) {
       var state = json(r) || {};
       var works = state.works || [];
+      canEdit = state.canEdit === true;
       clear(app);
       if (!works.length) {
         app.appendChild(emptyCard("Nothing ingested yet. Paste a Royal Road URL into Bindery, "
@@ -152,19 +156,22 @@
       });
       right.appendChild(select);
     }
-    var reset = el("button", "hg-btn", "Clear overrides");
-    reset.addEventListener("click", function () {
-      request("POST", "/api/reset", { work: selectedWork }).then(function () {
-        notify("info", "Manual ordering cleared.");
-        loadChapters();
+    if (canEdit) {
+      var reset = el("button", "hg-btn", "Clear overrides");
+      reset.addEventListener("click", function () {
+        request("POST", "/api/reset", { work: selectedWork }).then(function () {
+          notify("info", "Manual ordering cleared.");
+          loadChapters();
+        });
       });
-    });
-    right.appendChild(reset);
+      right.appendChild(reset);
+    }
     row.appendChild(right);
     card.appendChild(row);
-    card.appendChild(el("p", "hg-muted",
-      "Drag to reorder. Set a number to pin a chapter explicitly; both override the "
-      + "automatic arc.part ordering."));
+    card.appendChild(el("p", "hg-muted", canEdit
+      ? "Drag to reorder. Set a number to pin a chapter explicitly; both override the "
+        + "automatic arc.part ordering."
+      : "The order every copy of this book is built in. An admin can change it."));
     return card;
   }
 
@@ -181,17 +188,19 @@
       }
       var list = el("ul", "hg-list");
       chapters.forEach(function (ch) { list.appendChild(chapterRow(ch)); });
-      wireDragAndDrop(list);
+      if (canEdit) wireDragAndDrop(list);
       host.appendChild(list);
     });
   }
 
   function chapterRow(ch) {
-    var li = el("li", "hg-chapter");
-    li.setAttribute("draggable", "true");
+    var li = el("li", canEdit ? "hg-chapter" : "hg-chapter hg-readonly");
     li.dataset.id = String(ch.id);
 
-    li.appendChild(el("span", "hg-handle", "\u2630")); // ☰ drag handle
+    if (canEdit) {
+      li.setAttribute("draggable", "true");
+      li.appendChild(el("span", "hg-handle", "\u2630")); // ☰ drag handle
+    }
 
     var mid = el("div");
     mid.appendChild(el("div", "hg-title", ch.title || "Untitled"));
@@ -201,6 +210,8 @@
     li.appendChild(mid);
 
     li.appendChild(el("span", "hg-num", ch.number != null ? ch.number : "\u2014"));
+
+    if (!canEdit) return li;
 
     var pin = el("input", "hg-pin");
     pin.type = "number";

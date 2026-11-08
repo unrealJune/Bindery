@@ -70,8 +70,10 @@ None of that depends on Bindery parsing anything correctly.
     "entry": "/",
     "nav": [
       { "label": "Chapters", "path": "/", "icon": "book" },
-      { "label": "Sources",  "path": "/sources", "icon": "settings", "section": "settings" }
-    ]
+      { "label": "Sources",  "path": "/sources", "icon": "settings", "section": "settings",
+        "access": "admin" }
+    ],
+    "adminPaths": ["/sources"]
   }
 }
 ```
@@ -80,9 +82,13 @@ None of that depends on Bindery parsing anything correctly.
 |---|---|---|
 | `mode` | no | `declarative` (default), `sandboxed`, or `fragment`. An unrecognized value is treated as `declarative`. |
 | `entry` | no | Path loaded when the user opens the plugin with no path. Default `/`. |
-| `nav` | no | Entries Bindery links in its own chrome, pointing at `/plugins/{name}/ui{path}`. |
+| `nav` | no | Entries Bindery links in its own chrome, pointing at `/plugins/{name}/ui{path}`. An entry's `access` (`member` by default, or `admin`) decides who sees the link. |
+| `adminPaths` | no | Path prefixes only admins may reach. The proxy answers anyone else `403` without forwarding. |
 
 Anything not declared in `nav` is still reachable — it just is not linked from the chrome.
+That is why hiding a nav entry protects nothing on its own: a screen that changes what
+every person sees belongs in `adminPaths`, and the plugin should check the
+`X-Bindery-Role` header as well (`PLUGIN-PROTOCOL.md` §2.3).
 
 A host that does not implement `sandboxed` falls back to `declarative`, so declaring it is
 safe against an older Bindery: the plugin loses its UI, not its function.
@@ -103,6 +109,11 @@ body. It does enforce:
 - the size and time caps in `PLUGIN-PROTOCOL.md` §9.
 - `Cache-Control: no-store`.
 - a per-response CSP for the frame document (§5).
+- `ui.adminPaths`, before anything is forwarded.
+
+Every proxied request carries `X-Bindery-User` and `X-Bindery-Role` for the person viewing
+the plugin (`PLUGIN-PROTOCOL.md` §2.3), so a plugin can keep per-person state without ever
+learning who anyone is.
 
 A `sandboxed` plugin therefore serves a **complete document**, not a fragment: `<!doctype
 html>`, `<head>`, its own `<style>` and `<script>`. Nothing wraps it.

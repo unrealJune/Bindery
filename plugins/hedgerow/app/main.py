@@ -26,7 +26,7 @@ from pydantic import BaseModel, Field
 from . import epub, merge, notify, royalroad, ui
 from .discord_bot import BotManager, _split_channels
 from .jobs import JobStore
-from .manifest import VERSION, build_manifest
+from .manifest import ADMIN_ACTIONS, VERSION, build_manifest, is_admin_path
 from .store import SOURCE_ROYALROAD, Store
 
 logging.basicConfig(
@@ -216,7 +216,11 @@ async def delete_job(job_id: str) -> Response:
 
 
 @app.post("/bindery/v1/actions/{action}", dependencies=[Depends(require_token)])
-async def run_action(action: str, body: ActionRequest) -> dict:
+async def run_action(action: str, body: ActionRequest, request: Request) -> dict:
+    if action in ADMIN_ACTIONS and not _is_admin(request):
+        return {"status": "error",
+                "error": {"code": "internal", "message": "only an admin can run this action",
+                          "retryable": False}}
     await _apply_bot_config(body.config)
     if action == "pending":
         return _pending()
@@ -520,8 +524,8 @@ async def _apply_bot_config(config: Dict[str, Any]) -> None:
 # Explicit routes are registered before the catch-all so they win the match. The chapters
 # feed needs the ?work= query string, which a path catch-all would not expose cleanly.
 @app.get("/bindery/v1/ui/api/state", dependencies=[Depends(require_token)])
-async def ui_state() -> Response:
-    return _json(_ui_state())
+async def ui_state(request: Request) -> Response:
+    return _json(_ui_state(_is_admin(request)))
 
 
 @app.get("/bindery/v1/ui/api/chapters", dependencies=[Depends(require_token)])
@@ -530,8 +534,10 @@ async def ui_chapters(work: Optional[int] = None) -> Response:
 
 
 @app.get("/bindery/v1/ui/{path:path}", dependencies=[Depends(require_token)])
-async def ui_get(path: str) -> Response:
+async def ui_get(path: str, request: Request) -> Response:
     route = path.strip("/")
+    if _refused(route, request):
+        return _document(ui.admin_only(), status=403)
     if route in ("", "sources"):
         return _document(ui.shell())
     if route == "app.js":
@@ -544,6 +550,8 @@ async def ui_get(path: str) -> Response:
 @app.post("/bindery/v1/ui/{path:path}", dependencies=[Depends(require_token)])
 async def ui_post(path: str, request: Request) -> Response:
     route = path.strip("/")
+    if _refused(route, request):
+        raise HTTPException(status_code=403, detail="only an admin can change this")
     payload = await _body_json(request)
     if route == "api/order":
         store.set_manual_order(int(payload["work"]), [int(i) for i in payload.get("order", [])])
@@ -565,13 +573,26 @@ async def ui_post(path: str, request: Request) -> Response:
     raise HTTPException(status_code=404, detail="no such UI route")
 
 
-def _ui_state() -> dict:
+def _ui_state(is_admin: bool) -> dict:
     works = [{
         "id": w.id, "title": w.title, "author": w.author,
         "source_url": w.source_url, "hedgerow_url": w.hedgerow_url,
         "chapters": len(store.list_chapters(w.id)),
     } for w in store.list_works()]
-    return {"works": works, "bot": bot.status(), "bindings": store.bindings()}
+    if not is_admin:
+        # The bot and its channels are the admin's configuration, not the reader's business.
+        return {"works": works, "canEdit": False}
+    return {"works": works, "bot": bot.status(), "bindings": store.bindings(), "canEdit": True}
+
+
+def _is_admin(request: Request) -> bool:
+    # Absent means nobody is acting, which is never an admin (PLUGIN-PROTOCOL.md §2.3).
+    return (request.headers.get("x-bindery-role") or "").strip().lower() == "admin"
+
+
+def _refused(route: str, request: Request) -> bool:
+    """An admin path (the manifest's own list) asked for by anyone but an admin."""
+    return is_admin_path(route) and not _is_admin(request)
 
 
 def _ui_chapters(work_id: Optional[int]) -> dict:
@@ -599,8 +620,8 @@ async def _body_json(request: Request) -> dict:
         raise HTTPException(status_code=400, detail="expected a JSON object body")
 
 
-def _document(html: str) -> Response:
-    return Response(content=html, media_type="text/html; charset=utf-8",
+def _document(html: str, status: int = 200) -> Response:
+    return Response(content=html, status_code=status, media_type="text/html; charset=utf-8",
                     headers={"Cache-Control": "no-store"})
 
 

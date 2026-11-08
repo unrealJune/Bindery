@@ -29,8 +29,13 @@ def esc(value) -> str:
 # ---------------------------------------------------------------- home
 
 
-def home(base: str) -> str:
+def home(base: str, is_admin: bool = False) -> str:
     sites = site_examples()
+    ini_link = (
+        f'<li class="bnd-row"><a href="{esc(base)}/ini">Validate the shared personal.ini</a></li>'
+        if is_admin
+        else ""
+    )
     return f"""
 <div class="bnd-card">
   <h2>FanFicFare</h2>
@@ -55,7 +60,7 @@ def home(base: str) -> str:
   <h3>Where to go next</h3>
   <ul class="bnd-list">
     <li class="bnd-row"><a href="{esc(base)}/sites">Browse the supported sites</a></li>
-    <li class="bnd-row"><a href="{esc(base)}/ini">Validate your personal.ini</a></li>
+    {ini_link}
   </ul>
 </div>
 """.strip()
@@ -191,6 +196,10 @@ def ini_result(text: str) -> str:
         )
     items = "".join(f'<li class="bnd-row">{esc(problem)}</li>' for problem in problems)
     return f'<p><span class="bnd-badge">{len(problems)} problem(s)</span></p><ul class="bnd-list">{items}</ul>'
+
+
+def admin_only() -> str:
+    return '<div class="bnd-card"><p>Only an admin can open this page.</p></div>'
 
 
 def not_found() -> str:

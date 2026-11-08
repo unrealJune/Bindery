@@ -48,21 +48,22 @@ public sealed class PluginTests(BinderyFixture fixture)
 
         await store.SaveAsync(
             descriptor.Manifest,
+            null,
             new Dictionary<string, string?> { ["author_name"] = "R. Tester", ["api_key"] = "s3cret-value" },
             CancellationToken.None);
 
-        var display = await store.GetForDisplayAsync(descriptor.Manifest, CancellationToken.None);
+        var display = await store.GetForDisplayAsync(descriptor.Manifest, null, CancellationToken.None);
 
         Assert.Equal("R. Tester", display.ValueFor("author_name"));
         Assert.True(display.IsSecretSet("api_key"));
         Assert.DoesNotContain("s3cret-value", display.Values.Values);
 
         // The plugin still gets the plaintext — that is the whole point of storing it.
-        var resolved = await store.GetForPluginAsync(fixture.Plugin.Name, CancellationToken.None);
+        var resolved = await store.GetForPluginAsync(descriptor.Manifest, null, CancellationToken.None);
 
         Assert.Equal("s3cret-value", resolved["api_key"]);
 
-        await store.ClearAsync(fixture.Plugin.Name, "api_key", CancellationToken.None);
+        await store.ClearAsync(fixture.Plugin.Name, "api_key", null, CancellationToken.None);
     }
 
     [Fact]

@@ -30,8 +30,13 @@ be tested without a library, a network, or a database.
 Every row in `CirculationAccounts` has an `Owner`: the OIDC subject of the person who
 connected it. Every query in `CirculationService` is filtered by it. One person cannot see,
 search with, place holds on, or receive mail about another person's card — this is the one
-place in Bindery that is multi-user on purpose, because a library card is a person's, not a
-household's. (The book library itself stays shared; PLAN.md §10 is unchanged.)
+place where the person matters most, because a library card is a person's, not a
+household's. The rest of Bindery is per person too now — shelves, e-readers, progress — but
+the library files are stored once and shared (PLAN.md §10).
+
+Every circulation call carries the owner as `X-Bindery-User` (a per-plugin pseudonym) with
+`X-Bindery-Role: member` — always member, because a library card confers no authority over
+the installation and most calls are a background sync with nobody present (protocol §2.3).
 
 Card numbers are stored as plain values because the UI shows the last four digits; PINs are
 `secret` fields, encrypted with Data Protection exactly like plugin settings, never logged,
