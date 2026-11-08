@@ -19,6 +19,7 @@
     <Compile Include="Domain.fs" />
     <Compile Include="Epub.fs" />
     <Compile Include="Protocol.fs" />
+    <Compile Include="Circulation.fs" />
     <Compile Include="Routing.fs" />
     <Compile Include="Opds.fs" />
     <Compile Include="OpdsAtom.fs" />
