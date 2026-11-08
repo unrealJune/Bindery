@@ -1,0 +1,63 @@
+name: Dependabot auto-merge
+
+# Turns on GitHub's native auto-merge for low-risk Dependabot PRs. Nothing merges from
+# here directly: `gh pr merge --auto` only queues the PR, and GitHub merges it once the
+# branch's required checks (CI) pass. If CI is red, the PR just sits there.
+#
+# Requires, in repo settings:
+#   - Settings > General > "Allow auto-merge" enabled
+#   - A branch protection rule / ruleset on main that requires the CI `build-test` check
+#     (without a required check, auto-merge has nothing to wait for).
+#
+# What is deliberately NOT auto-merged, following the reasoning in dependabot.yml:
+#   - Any semver-major update.
+#   - Docker base-image minor bumps. CI never builds images on PRs (images.yml runs on
+#     main only), so a 3.12 -> 3.13 interpreter move would land untested.
+#   - HtmlSanitizer: security-critical, every update is reviewed against the XSS suite.
+#   - fanficfare and discord.py: kept ungrouped precisely so each arrives as its own PR
+#     to be checked against the plugin conformance run, which CI does not execute.
+
+on: pull_request
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    steps:
+      - name: Fetch Dependabot metadata
+        id: meta
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Decide
+        id: decide
+        env:
+          UPDATE_TYPE: ${{ steps.meta.outputs.update-type }}
+          ECOSYSTEM: ${{ steps.meta.outputs.package-ecosystem }}
+          DEPS: ${{ steps.meta.outputs.dependency-names }}
+        run: |
+          allow=false
+          case "$UPDATE_TYPE" in
+            version-update:semver-patch) allow=true ;;
+            version-update:semver-minor) [ "$ECOSYSTEM" != docker ] && allow=true ;;
+          esac
+          # Dependency names are comma-separated; any held-back name vetoes the whole PR.
+          for dep in $(echo "$DEPS" | tr ',' ' '); do
+            case "$(echo "$dep" | tr '[:upper:]' '[:lower:]')" in
+              htmlsanitizer|fanficfare|discord.py) allow=false ;;
+            esac
+          done
+          echo "update=$UPDATE_TYPE ecosystem=$ECOSYSTEM deps=$DEPS -> auto-merge=$allow"
+          echo "allow=$allow" >> "$GITHUB_OUTPUT"
+
+      - name: Enable auto-merge
+        if: steps.decide.outputs.allow == 'true'
+        run: gh pr merge --auto --squash "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
