@@ -47,6 +47,31 @@ jobs:
       - name: Plugin conformance self-test (sandboxed UI tier)
         run: python tests/conformance/run.py --self-test --stub-ui-mode sandboxed --no-color
 
+      - name: Build and smoke-test host image
+        run: |
+          docker build -t bindery-host:ci .
+          docker run -d --name bindery-host-ci \
+            -p 8081:8080 \
+            -e Bindery__Auth__Mode=None \
+            --read-only \
+            --tmpfs /tmp:rw,size=64m \
+            --tmpfs /data:rw,uid=10001,gid=10001 \
+            --tmpfs /library:rw,uid=10001,gid=10001 \
+            bindery-host:ci
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:8081/healthz; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "host never became healthy"; exit 1
+
+      - name: Host logs and cleanup
+        if: always()
+        run: |
+          docker logs bindery-host-ci || true
+          docker rm -f bindery-host-ci || true
+
   # The gate that makes dependency bumps meaningful.
   #
   # `build-test` above never installs Python and never sees FanFicFare, so on its own it
