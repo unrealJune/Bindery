@@ -67,7 +67,7 @@ This matters, so it is stated plainly.
 **Not verified — no library card was used while building this:**
 
 - That a successful sign-in yields the `bc_access_token` / `session_id` cookies and an
-  `accountId` on the dashboard.
+  the patron's account id in the `/v2/` page state (chosen by matching the card's barcode).
 - The exact shapes of the holds and checkouts responses, and of the place/cancel requests.
 
 All of that lives in [`app/account.py`](app/account.py), reads several plausible keys,
