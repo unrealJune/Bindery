@@ -60,7 +60,7 @@ public sealed class PluginDeskModel(
         }
 
         Descriptor = descriptor;
-        Nav = proxy.NavigationFor(descriptor);
+        Nav = proxy.NavigationFor(descriptor, Identity.IsAdmin(User));
         IsSandboxed = descriptor.Manifest.Ui.Mode.RunsInFrame;
 
         var relative = NormalizePath(path) is { } normalized && normalized != "/"

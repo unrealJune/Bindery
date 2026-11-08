@@ -82,9 +82,14 @@ public sealed class FeedTokenService(BinderyDbContext db, ILogger<FeedTokenServi
         return candidate;
     }
 
-    public async Task<bool> RevokeAsync(Guid id, CancellationToken cancellationToken)
+    /// <summary>
+    /// Revokes one of <paramref name="subject"/>'s tokens. Someone else's token is
+    /// indistinguishable from no token: false either way, so the answer reveals nothing.
+    /// </summary>
+    public async Task<bool> RevokeAsync(Guid id, string subject, CancellationToken cancellationToken)
     {
-        var token = await db.FeedTokens.FirstOrDefaultAsync(candidate => candidate.Id == id, cancellationToken);
+        var token = await db.FeedTokens.FirstOrDefaultAsync(
+            candidate => candidate.Id == id && candidate.Subject == subject, cancellationToken);
 
         if (token is null || token.RevokedAt is not null)
         {
@@ -97,9 +102,11 @@ public sealed class FeedTokenService(BinderyDbContext db, ILogger<FeedTokenServi
         return true;
     }
 
-    public Task<List<FeedTokenEntity>> ListAsync(CancellationToken cancellationToken) =>
+    /// <summary>The devices one person has issued. Never anyone else's.</summary>
+    public Task<List<FeedTokenEntity>> ListAsync(string subject, CancellationToken cancellationToken) =>
         db.FeedTokens
             .AsNoTracking()
+            .Where(token => token.Subject == subject)
             .OrderByDescending(token => token.CreatedAt)
             .ToListAsync(cancellationToken);
 

@@ -22,6 +22,10 @@ data:
   {{- end }}
   Bindery__Auth__RequireHttpsMetadata: {{ .Values.bindery.auth.requireHttpsMetadata | quote }}
   Bindery__Auth__NameClaim: {{ .Values.bindery.auth.nameClaim | quote }}
+  Bindery__Auth__AdminClaim: {{ .Values.bindery.auth.adminClaim | default "groups" | quote }}
+  {{- range $i, $value := .Values.bindery.auth.adminValues }}
+  Bindery__Auth__AdminValues__{{ $i }}: {{ $value | quote }}
+  {{- end }}
   Bindery__Auth__SessionLifetime: {{ .Values.bindery.auth.sessionLifetime | quote }}
   {{- range $i, $scope := .Values.bindery.auth.scopes }}
   Bindery__Auth__Scopes__{{ $i }}: {{ $scope | quote }}

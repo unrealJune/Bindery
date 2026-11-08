@@ -80,7 +80,7 @@ public sealed class CirculationService(
                 try
                 {
                     var reply = await client.SearchCatalogAsync(
-                        call.Descriptor.Entry, call.Protocol, query, medium, page, cancellationToken);
+                        call.Descriptor.Entry, call.Account.Owner, call.Protocol, query, medium, page, cancellationToken);
 
                     return reply switch
                     {
@@ -127,7 +127,7 @@ public sealed class CirculationService(
         try
         {
             var reply = await client.PlaceHoldAsync(
-                descriptor.Entry, accounts.ToProtocol(account), itemId, pickupLocationId, cancellationToken);
+                descriptor.Entry, account.Owner, accounts.ToProtocol(account), itemId, pickupLocationId, cancellationToken);
 
             if (reply is CirculationCore.Reply<FSharpOption<CirculationCore.ObservedHold>>.Refused refused)
             {
@@ -172,7 +172,7 @@ public sealed class CirculationService(
         try
         {
             var reply = await client.HoldOperationAsync(
-                descriptor.Entry, accounts.ToProtocol(item.Account), item.ExternalId, operation, until, cancellationToken);
+                descriptor.Entry, item.Account.Owner, accounts.ToProtocol(item.Account), item.ExternalId, operation, until, cancellationToken);
 
             if (reply is CirculationCore.Reply<FSharpOption<CirculationCore.ObservedHold>>.Refused refused)
             {
@@ -227,7 +227,7 @@ public sealed class CirculationService(
 
         try
         {
-            var reply = await client.SnapshotAsync(descriptor.Entry, accounts.ToProtocol(account), cancellationToken);
+            var reply = await client.SnapshotAsync(descriptor.Entry, account.Owner, accounts.ToProtocol(account), cancellationToken);
 
             switch (reply)
             {

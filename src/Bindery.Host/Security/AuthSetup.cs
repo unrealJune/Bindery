@@ -1,9 +1,11 @@
 using System.Security.Claims;
 using System.Text.Encodings.Web;
+using System.Text.Json;
 using Bindery.Host.Configuration;
 using Bindery.Host.Opds;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication.OAuth.Claims;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Options;
@@ -32,6 +34,12 @@ public static class AuthPolicies
     /// cookie, which exists to survive exactly that.
     /// </remarks>
     public const string UseFrame = "bindery:use-frame";
+
+    /// <summary>
+    /// Administer the installation: install-wide plugin settings, rescans, everyone's
+    /// downloads. A session whose role (<see cref="BinderyClaims.Role"/>) is admin.
+    /// </summary>
+    public const string Admin = "bindery:admin";
 }
 
 /// <summary>
@@ -65,6 +73,10 @@ public static class AuthSetup
     {
         var auth = options.Auth;
 
+        services.AddSingleton<UserPresence>();
+        services.AddScoped<UserDirectory>();
+        services.AddScoped<IClaimsTransformation, BinderyClaimsTransformation>();
+
         if (auth.Mode == AuthMode.None)
         {
             services.AddAuthentication(DevSchemeName)
@@ -73,7 +85,8 @@ public static class AuthSetup
             services.AddAuthorizationBuilder()
                 .AddPolicy(AuthPolicies.ReadCatalog, policy => policy.RequireAssertion(_ => true))
                 .AddPolicy(AuthPolicies.UseUi, policy => policy.RequireAssertion(_ => true))
-                .AddPolicy(AuthPolicies.UseFrame, policy => policy.RequireAssertion(_ => true));
+                .AddPolicy(AuthPolicies.UseFrame, policy => policy.RequireAssertion(_ => true))
+                .AddPolicy(AuthPolicies.Admin, policy => policy.RequireAssertion(context => Identity.IsAdmin(context.User)));
 
             return services;
         }
@@ -178,6 +191,14 @@ public static class AuthSetup
                     oidc.Scope.Add(scope);
                 }
 
+                // Many providers put groups only in the userinfo response, and the handler
+                // keeps a userinfo claim only if a claim action names it. Without this, the
+                // admin claim silently never arrives and nobody is an admin.
+                if (auth.AdminValues.Count > 0)
+                {
+                    oidc.ClaimActions.Add(new AdminClaimAction(auth.AdminClaim));
+                }
+
                 oidc.TokenValidationParameters = new TokenValidationParameters
                 {
                     NameClaimType = auth.NameClaim,
@@ -221,7 +242,13 @@ public static class AuthSetup
                 .AddAuthenticationSchemes(CookieAuthenticationDefaults.AuthenticationScheme, FrameSchemeName)
                 .RequireAuthenticatedUser()
                 .RequireAssertion(context =>
-                    context.User.FindFirst(BinderyClaims.CredentialKind)?.Value != BinderyClaims.FeedTokenCredential));
+                    context.User.FindFirst(BinderyClaims.CredentialKind)?.Value != BinderyClaims.FeedTokenCredential))
+            .AddPolicy(AuthPolicies.Admin, policy => policy
+                .AddAuthenticationSchemes(CookieAuthenticationDefaults.AuthenticationScheme)
+                .RequireAuthenticatedUser()
+                .RequireAssertion(context =>
+                    context.User.FindFirst(BinderyClaims.CredentialKind)?.Value != BinderyClaims.FeedTokenCredential
+                    && Identity.IsAdmin(context.User)));
 
         services.AddAuthentication()
             .AddScheme<FeedTokenOptions, FeedTokenAuthenticationHandler>(
@@ -260,8 +287,36 @@ public static class AuthSetup
 }
 
 /// <summary>
-/// Authenticates everyone as a local developer. Only reachable with
-/// <c>Auth:Mode=None</c>, which warns at boot and keeps warning.
+/// Copies the admin claim out of the userinfo response — one value or an array of them —
+/// unless the ID token already carried it, so the cookie does not hold every group twice.
+/// </summary>
+internal sealed class AdminClaimAction(string claimType) : ClaimAction(claimType, ClaimValueTypes.String)
+{
+    public override void Run(JsonElement userData, ClaimsIdentity identity, string issuer)
+    {
+        if (identity.HasClaim(claim => claim.Type == ClaimType)
+            || !userData.TryGetProperty(ClaimType, out var value))
+        {
+            return;
+        }
+
+        IEnumerable<JsonElement> values = value.ValueKind == JsonValueKind.Array
+            ? value.EnumerateArray()
+            : [value];
+
+        foreach (var item in values)
+        {
+            if (item.ValueKind is JsonValueKind.String or JsonValueKind.Number)
+            {
+                identity.AddClaim(new Claim(ClaimType, item.ToString(), ValueType, issuer));
+            }
+        }
+    }
+}
+
+/// <summary>
+/// Authenticates everyone as a local developer — an admin, since there is nobody else.
+/// Only reachable with <c>Auth:Mode=None</c>, which warns at boot and keeps warning.
 /// </summary>
 public sealed class DevelopmentAuthenticationHandler(
     IOptionsMonitor<AuthenticationSchemeOptions> options,
@@ -274,7 +329,8 @@ public sealed class DevelopmentAuthenticationHandler(
             [
                 new Claim(ClaimTypes.NameIdentifier, "dev"),
                 new Claim(ClaimTypes.Name, "Development"),
-                new Claim(BinderyClaims.CredentialKind, BinderyClaims.SessionCredential)
+                new Claim(BinderyClaims.CredentialKind, BinderyClaims.SessionCredential),
+                new Claim(BinderyClaims.Role, BinderyClaims.AdminRole)
             ],
             AuthSetup.DevSchemeName);
 

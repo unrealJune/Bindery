@@ -56,6 +56,49 @@ module FieldType =
 
 type SelectOption = { Value: string; Label: string }
 
+/// Whose value a config field holds (protocol 4.1).
+type ConfigScope =
+    /// One value for the whole installation, set by an admin.
+    | InstallScope
+    /// Each person's own value, never shown to anyone else.
+    | UserScope
+
+    member this.Wire =
+        match this with
+        | InstallScope -> "install"
+        | UserScope -> "user"
+
+module ConfigScope =
+    /// Absent means install, the behaviour every plugin had before scopes existed. An
+    /// unrecognized value means user: a typo must never share one person's login with
+    /// everyone.
+    let ofWire (value: string option) =
+        match value |> Option.map (fun raw -> raw.Trim().ToLowerInvariant()) with
+        | None
+        | Some "install" -> InstallScope
+        | Some _ -> UserScope
+
+/// Who may use an action or see a nav entry (protocol 5 and 6).
+type Access =
+    | MemberAccess
+    | AdminAccess
+
+    member this.Wire =
+        match this with
+        | MemberAccess -> "member"
+        | AdminAccess -> "admin"
+
+    /// Whether a person with the given role may use something declared with this access.
+    member this.Permits(isAdmin: bool) = isAdmin || this = MemberAccess
+
+module Access =
+    /// Absent means member. An unrecognized value means admin, so a typo fails closed.
+    let ofWire (value: string option) =
+        match value |> Option.map (fun raw -> raw.Trim().ToLowerInvariant()) with
+        | None
+        | Some "member" -> MemberAccess
+        | Some _ -> AdminAccess
+
 type ConfigField =
     { Key: string
       Label: string
@@ -67,7 +110,10 @@ type ConfigField =
       Options: SelectOption list
       Min: int option
       Max: int option
-      Pattern: string option }
+      Pattern: string option
+      /// Only meaningful in a manifest's `config`; action input and account fields are
+      /// already a person's own and ignore it.
+      Scope: ConfigScope }
 
 type UiMode =
     | Declarative
@@ -106,12 +152,69 @@ type NavEntry =
     { Label: string
       Path: string
       Icon: string option
-      Section: string option }
+      Section: string option
+      /// Visibility only. What protects a screen is `PluginUi.AdminPaths`.
+      Access: Access }
 
 type PluginUi =
     { Mode: UiMode
       Entry: string
-      Nav: NavEntry list }
+      Nav: NavEntry list
+      /// Path prefixes only an admin may reach. The host refuses everyone else before
+      /// anything is forwarded.
+      AdminPaths: string list }
+
+    /// Whether a request for `path` (relative to the UI mount) falls under an admin path.
+    ///
+    /// The plugin will read the path after its own percent-decoding, and the host's router
+    /// may already have decoded it once, so the comparison is made against every decoding
+    /// of it — and is admin if *any* of them is. Backslashes read as slashes, empty and dot
+    /// segments are resolved, and case is ignored. Each of those can only make a path more
+    /// likely to count as admin, which is the direction a mistake here has to fail in.
+    member this.IsAdminPath(path: string) =
+        if List.isEmpty this.AdminPaths then
+            false
+        else
+            let segments (value: string) =
+                let query = value.IndexOfAny([| '?'; '#' |])
+                let bare = if query >= 0 then value.Substring(0, query) else value
+
+                (([], bare.Replace('\\', '/').Split('/'))
+                 ||> Array.fold (fun stack segment ->
+                     match segment with
+                     | ""
+                     | "." -> stack
+                     | ".." ->
+                         match stack with
+                         | _ :: rest -> rest
+                         | [] -> []
+                     | name -> name.ToLowerInvariant() :: stack))
+                |> List.rev
+
+            let decodings =
+                let rec loop (current: string) depth acc =
+                    let next =
+                        try
+                            Uri.UnescapeDataString(current)
+                        with _ ->
+                            current
+
+                    if next = current || depth >= 4 then acc else loop next (depth + 1) (next :: acc)
+
+                loop path 0 [ path ]
+
+            let rec under prefix candidate =
+                match prefix, candidate with
+                | [], _ -> true
+                | p :: ps, c :: cs when p = c -> under ps cs
+                | _ -> false
+
+            let prefixes = this.AdminPaths |> List.map segments
+
+            decodings
+            |> List.exists (fun form ->
+                let requested = segments form
+                prefixes |> List.exists (fun prefix -> under prefix requested))
 
 type Capabilities =
     { Probe: bool
@@ -155,7 +258,8 @@ type PluginAction =
       Label: string
       Description: string option
       Input: ConfigField list
-      Output: ActionOutput }
+      Output: ActionOutput
+      Access: Access }
 
 /// Whether a library item is a copy on a shelf or a licence on a lending platform. The
 /// protocol makes this explicit on every item because the two behave nothing alike: a ready
@@ -222,6 +326,12 @@ type Manifest =
 
     member this.SecretKeys =
         this.Config |> List.filter (fun field -> field.Type.IsSecret) |> List.map (fun field -> field.Key)
+
+    /// Config fields an admin sets once for everybody.
+    member this.InstallConfig = this.Config |> List.filter (fun field -> field.Scope = InstallScope)
+
+    /// Config fields each person sets for themselves.
+    member this.UserConfig = this.Config |> List.filter (fun field -> field.Scope = UserScope)
 
 // ---------------------------------------------------------------- messages
 
@@ -453,7 +563,8 @@ module internal Parse =
                               Label = Json.stringOr value "label" option }))
                   Min = Json.tryInt "min" element
                   Max = Json.tryInt "max" element
-                  Pattern = Json.tryText "pattern" element })
+                  Pattern = Json.tryText "pattern" element
+                  Scope = ConfigScope.ofWire (Json.tryText "scope" element) })
         | _ -> None
 
     let capabilities (element: JsonElement) =
@@ -505,7 +616,11 @@ module internal Parse =
 
     let ui (element: JsonElement) =
         match Json.tryProp "ui" element with
-        | None -> { Mode = Declarative; Entry = "/"; Nav = [] }
+        | None ->
+            { Mode = Declarative
+              Entry = "/"
+              Nav = []
+              AdminPaths = [] }
         | Some ui ->
             { Mode = Json.tryText "mode" ui |> Option.bind UiMode.ofWire |> Option.defaultValue Declarative
               Entry = Json.tryText "entry" ui |> Option.bind uiPath |> Option.defaultValue "/"
@@ -518,8 +633,13 @@ module internal Parse =
                             { Label = label
                               Path = path
                               Icon = Json.tryText "icon" entry
-                              Section = Json.tryText "section" entry }
-                    | _ -> None) }
+                              Section = Json.tryText "section" entry
+                              Access = Access.ofWire (Json.tryText "access" entry) }
+                    | _ -> None)
+              // Not run through `uiPath`: dropping a malformed prefix would quietly *narrow*
+              // what is protected. `IsAdminPath` normalizes both sides instead, so a sloppy
+              // prefix still protects what it plainly meant to.
+              AdminPaths = Json.strings "adminPaths" ui }
 
     let action (element: JsonElement) : PluginAction option =
         match Json.tryText "name" element, Json.tryText "label" element with
@@ -546,7 +666,8 @@ module internal Parse =
                   Label = label
                   Description = Json.tryText "description" element
                   Input = Json.items "input" element |> List.choose field
-                  Output = output })
+                  Output = output
+                  Access = Access.ofWire (Json.tryText "access" element) })
         | _ -> None
 
     let artifact (element: JsonElement) : Artifact option =

@@ -67,16 +67,22 @@ answer that is always correct.
 
 ## Configuration fields
 
-| Key | Type | Notes |
-|---|---|---|
-| `ao3_username` / `ao3_password` | string / secret | Written into an `[archiveofourown.org]` section. Needed only for restricted works. |
-| `is_adult` | bool | Satisfies the adult gate several sites use. |
-| `include_images` | bool | Embeds illustrations. Bigger files, slower downloads. |
-| `user_agent` | string | Override the browser identity. Leave blank unless a site is refusing you. |
-| `personal_ini` | text | Raw FanFicFare config, applied *after* the fields above so it always wins. |
+| Key | Scope | Type | Notes |
+|---|---|---|---|
+| `ao3_username` / `ao3_password` | user | string / secret | Written into an `[archiveofourown.org]` section. Needed only for restricted works. |
+| `is_adult` | user | bool | Satisfies the adult gate several sites use. |
+| `include_images` | install | bool | Embeds illustrations. Bigger files, slower downloads. |
+| `user_agent` | install | string | Override the browser identity. Leave blank unless a site is refusing you. |
+| `personal_ini` | install | text | Raw FanFicFare config, applied *after* the fields above so it always wins. |
+
+**Scope** is protocol §4.1. A `user` field is each person's own: Bindery shows it under
+"Your settings", and a download carries the values of the person who queued it (for an
+unattended update, the person who has held the book longest). An `install` field is set by
+an admin and shared. That is why logins are not in `personal_ini` — put one there and it is
+everyone's.
 
 Two ini files are written per job and passed with `-c` in priority order: one generated
-from the fields above, then the user's `personal_ini`. `HOME` and `XDG_CONFIG_HOME` point
+from the fields above, then the installation's `personal_ini`. `HOME` and `XDG_CONFIG_HOME` point
 at the job's scratch directory so FanFicFare cannot pick up configuration from anywhere
 unexpected.
 
@@ -94,7 +100,10 @@ shipping a single tag of HTML — Bindery renders it from the manifest's action 
 - **`/sites`** — the supported-site list, filtered live over htmx. Read out of the
   installed FanFicFare at startup, so it is right by construction after every image bump.
 - **`/ini`** — a `personal.ini` validator: does it parse, and do its sections name sites
-  FanFicFare recognizes?
+  FanFicFare recognizes? `personal_ini` is installation config, so this screen is an
+  admin's: its nav entry is `access: "admin"` and `/ini` is in `ui.adminPaths`. Bindery
+  refuses it to a member before forwarding, and the plugin checks `X-Bindery-Role` itself
+  too.
 
 Fragments are stateless with respect to configuration. The `/ini` page validates; it does
 not save. Persistent settings are declared in the manifest and stored by the host, which

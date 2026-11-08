@@ -1,4 +1,3 @@
-using System.Security.Claims;
 using Bindery.Host.Data;
 using Bindery.Host.Security;
 using Microsoft.AspNetCore.Mvc;
@@ -26,17 +25,12 @@ public sealed class FeedTokensModel(FeedTokenService tokens) : PageModel
     {
         IssuedSecret = TempData["IssuedSecret"] as string;
         IssuedName = TempData["IssuedName"] as string;
-        Tokens = await tokens.ListAsync(cancellationToken);
+        Tokens = await tokens.ListAsync(Identity.SubjectOf(User), cancellationToken);
     }
 
     public async Task<IActionResult> OnPostIssueAsync(string name, CancellationToken cancellationToken)
     {
-        var subject = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
-            ?? User.FindFirst("sub")?.Value
-            ?? User.Identity?.Name
-            ?? "unknown";
-
-        var issued = await tokens.IssueAsync(name ?? string.Empty, subject, cancellationToken);
+        var issued = await tokens.IssueAsync(name ?? string.Empty, Identity.SubjectOf(User), cancellationToken);
 
         TempData["IssuedSecret"] = issued.Secret;
         TempData["IssuedName"] = issued.Entity.Name;
@@ -46,7 +40,7 @@ public sealed class FeedTokensModel(FeedTokenService tokens) : PageModel
 
     public async Task<IActionResult> OnPostRevokeAsync(Guid id, CancellationToken cancellationToken)
     {
-        TempData["Notice"] = await tokens.RevokeAsync(id, cancellationToken)
+        TempData["Notice"] = await tokens.RevokeAsync(id, Identity.SubjectOf(User), cancellationToken)
             ? "Token revoked. That device will stop syncing on its next request."
             : "That token could not be revoked.";
 

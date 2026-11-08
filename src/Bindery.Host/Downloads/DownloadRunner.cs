@@ -4,6 +4,7 @@ using Bindery.Host.Data;
 using Bindery.Host.Library;
 using Bindery.Host.Notifications;
 using Bindery.Host.Plugins;
+using Bindery.Host.Security;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
@@ -24,6 +25,7 @@ public sealed class DownloadRunner(
     PluginSettingsStore settings,
     LibraryStore library,
     BookIndexer indexer,
+    ShelfService shelves,
     NotificationService notifications,
     IOptions<BinderyOptions> options,
     ILogger<DownloadRunner> logger)
@@ -92,8 +94,14 @@ public sealed class DownloadRunner(
         await LogAsync(job, "info", $"routed to {resolved.Descriptor.DisplayName}: {resolved.Reason}");
 
         var manifest = resolved.Descriptor.Manifest!;
-        var config = await settings.GetForPluginAsync(manifest.Name, cancellationToken);
         var existing = await FindExistingBookAsync(job, cancellationToken);
+
+        // Whose login the plugin uses (§2.3, §4.1): the person who asked, or — for an
+        // update nobody asked for — whoever has held the book longest. It decides config
+        // only; it never puts the book on anyone's shelf.
+        var actingFor = job.RequesterSubject
+            ?? (existing is null ? null : (await shelves.OwnersAsync(existing.Id, cancellationToken)).FirstOrDefault());
+        var config = await settings.GetForPluginAsync(manifest, actingFor, cancellationToken);
 
         var request = new Protocol.DownloadRequest(
             job.Id,
@@ -111,6 +119,7 @@ public sealed class DownloadRunner(
         await client.DownloadAsync(
             resolved.Descriptor.Entry,
             request,
+            actingFor is null ? null : new Person(actingFor, IsAdmin: false),
             async (pluginEvent, token) =>
             {
                 switch (pluginEvent)
@@ -154,12 +163,31 @@ public sealed class DownloadRunner(
 
         if (outcome.IsUnchanged)
         {
-            job.Status = JobStatus.Unchanged;
+            // Nothing new to fetch, but someone else's copy is current — and the person who
+            // asked for it is owed it on their shelf all the same.
+            var shelved = existing is not null
+                && job.RequesterSubject is not null
+                && await shelves.AddAsync(existing.Id, job.RequesterSubject, cancellationToken);
+
+            job.BookId ??= existing?.Id;
+            job.Status = shelved ? JobStatus.Succeeded : JobStatus.Unchanged;
             job.Percent = 100;
-            job.Message = "Already up to date";
+            job.Message = shelved ? "Added to your shelf" : "Already up to date";
             job.CompletedAt = DateTimeOffset.UtcNow;
-            await LogAsync(job, "info", "the source has nothing new");
+            await LogAsync(job, "info", shelved
+                ? "already in the library and current; shelved for the requester"
+                : "the source has nothing new");
             await db.SaveChangesAsync(cancellationToken);
+
+            if (shelved)
+            {
+                await NotifyAsync(
+                    job,
+                    NotificationCategories.DownloadFiled,
+                    $"Filed: {existing!.Title}",
+                    $"{existing.Title}\n\nis on the shelf, from {job.Url}.\n\n— Bindery");
+            }
+
             return;
         }
 
@@ -207,11 +235,32 @@ public sealed class DownloadRunner(
                     artifact.Kind.IsCoverArtifact));
             }
 
-            var sidecar = BuildSidecar(metadata, descriptor.Name, existing);
-            var placement = await library.PlaceAsync(sidecar, staged, existing?.DirectoryPath, cancellationToken);
+            IndexedBook indexed;
+            Placement placement;
 
-            var placed = sidecar with { Files = placement.Files, CoverPath = placement.CoverPath };
-            var indexed = await indexer.IndexAsync(placed, placement.DirectoryPath, existing, cancellationToken);
+            // Under the shelf gate: the owner list is read from the index and written into a
+            // fresh sidecar, and a shelf change in between would be lost with the old one.
+            using (await ShelfService.HoldAsync(cancellationToken))
+            {
+                // Another person's job for the same URL may have filed it while this one ran;
+                // both land on the one book, and both people get it.
+                existing ??= await FindExistingBookAsync(job, cancellationToken);
+
+                // The pasted URL is rarely the plugin's canonical one (a chapter link, a
+                // missing www). What the plugin says the work is decides — the same test the
+                // library uses to reuse a directory, so a second person's copy can never be
+                // filed as a new book over the first person's sidecar.
+                existing ??= await FindSameWorkAsync(
+                    metadata.SourceId.OrNull(), metadata.SourceUrl.OrNull(), cancellationToken);
+
+                // The requester joins the owners. A job nobody queued keeps whoever has it.
+                var owners = await shelves.OwnersForPlacementAsync(existing?.Id, job.RequesterSubject, cancellationToken);
+                var sidecar = BuildSidecar(metadata, descriptor.Name, existing) with { Owners = owners };
+                placement = await library.PlaceAsync(sidecar, staged, existing?.DirectoryPath, cancellationToken);
+
+                var placed = sidecar with { Files = placement.Files, CoverPath = placement.CoverPath };
+                indexed = await indexer.IndexAsync(placed, placement.DirectoryPath, existing, cancellationToken);
+            }
 
             job.BookId = indexed.Book.Id;
             job.Status = JobStatus.Succeeded;
@@ -268,6 +317,18 @@ public sealed class DownloadRunner(
         // Same URL is the reliable signal before a download; source id only exists after
         // the plugin has told us one.
         return await db.Books.FirstOrDefaultAsync(book => book.SourceUrl == job.Url, cancellationToken);
+    }
+
+    private async Task<BookEntity?> FindSameWorkAsync(string? sourceId, string? sourceUrl, CancellationToken cancellationToken)
+    {
+        if (sourceId is null && sourceUrl is null)
+        {
+            return null;
+        }
+
+        return await db.Books.FirstOrDefaultAsync(
+            book => (sourceId != null && book.SourceId == sourceId) || (sourceUrl != null && book.SourceUrl == sourceUrl),
+            cancellationToken);
     }
 
     private async Task FailAsync(DownloadJobEntity job, string code, string message, bool retryable)

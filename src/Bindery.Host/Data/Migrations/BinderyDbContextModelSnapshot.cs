@@ -637,6 +637,10 @@ namespace Bindery.Host.Data.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("Owner")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Plugin")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -652,7 +656,12 @@ namespace Bindery.Host.Data.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("Plugin", "Key")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasFilter("\"Owner\" IS NULL");
+
+                    b.HasIndex("Plugin", "Owner", "Key")
+                        .IsUnique()
+                        .HasFilter("\"Owner\" IS NOT NULL");
 
                     b.ToTable("PluginSettings");
                 });
@@ -715,6 +724,25 @@ namespace Bindery.Host.Data.Migrations
                     b.ToTable("Series");
                 });
 
+            modelBuilder.Entity("Bindery.Host.Data.ShelfEntryEntity", b =>
+                {
+                    b.Property<Guid>("BookId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Owner")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("AddedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("BookId", "Owner");
+
+                    b.HasIndex("Owner");
+
+                    b.ToTable("Shelves");
+                });
+
             modelBuilder.Entity("Bindery.Host.Data.TagEntity", b =>
                 {
                     b.Property<int>("Id")
@@ -732,6 +760,33 @@ namespace Bindery.Host.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("Tags");
+                });
+
+            modelBuilder.Entity("Bindery.Host.Data.UserEntity", b =>
+                {
+                    b.Property<string>("Subject")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DisplayName")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Email")
+                        .HasMaxLength(320)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("FirstSeenAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("LastSeenAt")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Subject");
+
+                    b.HasIndex("FirstSeenAt");
+
+                    b.ToTable("Users");
                 });
 
             modelBuilder.Entity("Bindery.Host.Data.BookAuthorEntity", b =>
@@ -847,6 +902,17 @@ namespace Bindery.Host.Data.Migrations
                     b.Navigation("Book");
                 });
 
+            modelBuilder.Entity("Bindery.Host.Data.ShelfEntryEntity", b =>
+                {
+                    b.HasOne("Bindery.Host.Data.BookEntity", "Book")
+                        .WithMany("Shelf")
+                        .HasForeignKey("BookId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Book");
+                });
+
             modelBuilder.Entity("Bindery.Host.Data.AuthorEntity", b =>
                 {
                     b.Navigation("Books");
@@ -857,6 +923,8 @@ namespace Bindery.Host.Data.Migrations
                     b.Navigation("Authors");
 
                     b.Navigation("Files");
+
+                    b.Navigation("Shelf");
 
                     b.Navigation("Tags");
                 });

@@ -90,6 +90,14 @@ bindery:
     scopes: ["openid", "profile", "email"]
     allowedUsers: []
     nameClaim: name
+    # Who administers this installation: plugins and their shared settings, library
+    # rescans, admin-only plugin screens. Everyone else is a member with their own shelf,
+    # e-readers, and library cards. A person is an admin when their `adminClaim` holds any
+    # of `adminValues` (case-insensitive) — usually a group, e.g. adminClaim: groups,
+    # adminValues: ["bindery-admins"]; add the provider's groups scope to `scopes` if it
+    # needs one. Left empty, the first person who ever signed in is the admin.
+    adminClaim: groups
+    adminValues: []
     sessionLifetime: 14.00:00:00
   downloads:
     concurrency: 2

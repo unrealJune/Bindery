@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Bindery.Core;
 using Bindery.Host.Configuration;
+using Bindery.Host.Security;
 using Microsoft.Extensions.Options;
 using CirculationCore = Bindery.Core.Circulation;
 
@@ -27,6 +28,7 @@ public sealed class PluginClient(
     IHttpClientFactory factory,
     IOptions<BinderyOptions> options,
     PluginNotifyTokens notifyTokens,
+    PluginPseudonyms pseudonyms,
     ILogger<PluginClient> logger)
 {
     public const string RequestClient = "bindery-plugin";
@@ -132,6 +134,7 @@ public sealed class PluginClient(
     public async Task DownloadAsync(
         PluginEntry entry,
         Protocol.DownloadRequest request,
+        Person? actingFor,
         Func<Protocol.PluginEvent, CancellationToken, Task> onEvent,
         CancellationToken cancellationToken)
     {
@@ -143,6 +146,7 @@ public sealed class PluginClient(
         };
 
         message.Headers.Add("X-Bindery-Job-Id", request.JobId.ToString("D"));
+        pseudonyms.Apply(message, entry.Name, actingFor);
 
         using var response = await client.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
 
@@ -343,6 +347,7 @@ public sealed class PluginClient(
         string action,
         IReadOnlyDictionary<string, string> input,
         IReadOnlyDictionary<string, string> config,
+        Person actingFor,
         CancellationToken cancellationToken)
     {
         using var client = CreateClient(entry, RequestClient);
@@ -357,7 +362,8 @@ public sealed class PluginClient(
             $"/bindery/v1/actions/{Uri.EscapeDataString(action)}",
             new StringContent(payload, Encoding.UTF8, "application/json"),
             1024 * 1024,
-            timeout.Token);
+            timeout.Token,
+            message => pseudonyms.Apply(message, entry.Name, actingFor));
 
         if (!Protocol.Action.parse(body).TryGet(out var outcome, out var error))
         {
@@ -368,15 +374,19 @@ public sealed class PluginClient(
     }
 
     // ------------------------------------------------------------ circulation (protocol 3.8)
+    // Every call carries the account owner (§2.3), always as a member: a library card
+    // confers no authority over the installation, and most of these calls are a background
+    // sync with nobody present to hold one.
 
     private const int MaxCirculationBytes = 2 * 1024 * 1024;
 
     public Task<CirculationCore.Reply<CirculationCore.Verified>> VerifyAccountAsync(
-        PluginEntry entry, CirculationCore.Account account, CancellationToken cancellationToken) =>
-        CirculationAsync(entry, "verify", CirculationCore.Request.verify(account), CirculationCore.Parse.verify, cancellationToken);
+        PluginEntry entry, string owner, CirculationCore.Account account, CancellationToken cancellationToken) =>
+        CirculationAsync(entry, owner, "verify", CirculationCore.Request.verify(account), CirculationCore.Parse.verify, cancellationToken);
 
     public Task<CirculationCore.Reply<CirculationCore.SearchPage>> SearchCatalogAsync(
         PluginEntry entry,
+        string owner,
         CirculationCore.Account account,
         string query,
         Protocol.Medium? medium,
@@ -384,6 +394,7 @@ public sealed class PluginClient(
         CancellationToken cancellationToken) =>
         CirculationAsync(
             entry,
+            owner,
             "search",
             CirculationCore.Request.search(
                 account,
@@ -394,17 +405,19 @@ public sealed class PluginClient(
             cancellationToken);
 
     public Task<CirculationCore.Reply<CirculationCore.Snapshot>> SnapshotAsync(
-        PluginEntry entry, CirculationCore.Account account, CancellationToken cancellationToken) =>
-        CirculationAsync(entry, "snapshot", CirculationCore.Request.snapshot(account), CirculationCore.Parse.snapshot, cancellationToken);
+        PluginEntry entry, string owner, CirculationCore.Account account, CancellationToken cancellationToken) =>
+        CirculationAsync(entry, owner, "snapshot", CirculationCore.Request.snapshot(account), CirculationCore.Parse.snapshot, cancellationToken);
 
     public Task<CirculationCore.Reply<Microsoft.FSharp.Core.FSharpOption<CirculationCore.ObservedHold>>> PlaceHoldAsync(
         PluginEntry entry,
+        string owner,
         CirculationCore.Account account,
         string itemId,
         string? pickupLocationId,
         CancellationToken cancellationToken) =>
         CirculationAsync(
             entry,
+            owner,
             "holds",
             CirculationCore.Request.placeHold(account, itemId, pickupLocationId.ToOption()),
             CirculationCore.Parse.holdChange,
@@ -412,6 +425,7 @@ public sealed class PluginClient(
 
     public Task<CirculationCore.Reply<Microsoft.FSharp.Core.FSharpOption<CirculationCore.ObservedHold>>> HoldOperationAsync(
         PluginEntry entry,
+        string owner,
         CirculationCore.Account account,
         string holdId,
         Protocol.HoldOperation operation,
@@ -419,6 +433,7 @@ public sealed class PluginClient(
         CancellationToken cancellationToken) =>
         CirculationAsync(
             entry,
+            owner,
             $"holds/{Uri.EscapeDataString(holdId)}/{operation.Wire}",
             CirculationCore.Request.holdOperation(account, until.ToValueOption()),
             CirculationCore.Parse.holdChange,
@@ -431,6 +446,7 @@ public sealed class PluginClient(
     /// </summary>
     private async Task<T> CirculationAsync<T>(
         PluginEntry entry,
+        string owner,
         string route,
         string payload,
         Func<string, Microsoft.FSharp.Core.FSharpResult<T, string>> parse,
@@ -446,7 +462,8 @@ public sealed class PluginClient(
             $"/bindery/v1/circulation/{route}",
             new StringContent(payload, Encoding.UTF8, "application/json"),
             MaxCirculationBytes,
-            timeout.Token);
+            timeout.Token,
+            message => pseudonyms.Apply(message, entry.Name, new Person(owner, IsAdmin: false)));
 
         if (!parse(body).TryGet(out var reply, out var error))
         {
@@ -498,9 +515,11 @@ public sealed class PluginClient(
         string path,
         HttpContent? content,
         int maxBytes,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Action<HttpRequestMessage>? decorate = null)
     {
         using var request = new HttpRequestMessage(method, path) { Content = content };
+        decorate?.Invoke(request);
         using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
 
         if (!response.IsSuccessStatusCode)

@@ -15,12 +15,13 @@ public sealed record ScanReport(int Added, int Updated, int Removed, int Skipped
 /// This is what makes "the database is a rebuildable index" a fact rather than a slogan.
 /// Delete <c>bindery.db</c>, restart, run a scan, and the library is back — because every
 /// book directory carries a <c>bindery.json</c> sidecar with the metadata the database
-/// would otherwise be the only copy of.
+/// would otherwise be the only copy of — shelves included.
 /// </remarks>
 public sealed class LibraryScanner(
     BinderyDbContext db,
     LibraryStore library,
     BookIndexer indexer,
+    ShelfService shelves,
     ILogger<LibraryScanner> logger)
 {
     public async Task<ScanReport> ScanAsync(CancellationToken cancellationToken)
@@ -36,6 +37,10 @@ public sealed class LibraryScanner(
         {
             cancellationToken.ThrowIfCancellationRequested();
             onDisk.Add(directory);
+
+            // Read and index under the shelf gate, so a shelf change cannot land between the
+            // sidecar being read and the index being made to match it.
+            using var hold = await ShelfService.HoldAsync(cancellationToken);
 
             var sidecar = await library.ReadSidecarAsync(directory, cancellationToken);
 
@@ -88,6 +93,9 @@ public sealed class LibraryScanner(
         }
 
         await indexer.PruneEmptyGroupingsAsync(cancellationToken);
+
+        // Books copied in by hand, and sidecars from before shelves, belong to nobody yet.
+        await shelves.AdoptOrphansAsync(cancellationToken);
 
         var report = new ScanReport(added, updated, removedIds.Count, skipped, problems);
 

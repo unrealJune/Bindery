@@ -76,7 +76,7 @@ public sealed class IndexModel(
         await using var content = Upload!.OpenReadStream();
 
         var result = await library.ImportAsync(
-            content, Upload.FileName, UploadTitle, UploadAuthor, cancellationToken);
+            Security.Identity.SubjectOf(User), content, Upload.FileName, UploadTitle, UploadAuthor, cancellationToken);
 
         if (!result.Accepted)
         {
@@ -86,8 +86,8 @@ public sealed class IndexModel(
         }
 
         TempData["Notice"] = result.AlreadyHeld
-            ? $"Already on the volume, byte for byte: “{result.Title}”."
-            : $"Filed “{result.Title}” onto the volume.";
+            ? $"Already on your shelf, byte for byte: “{result.Title}”."
+            : $"Filed “{result.Title}” onto your shelf.";
 
         return RedirectToPage("/Book", new { id = result.BookId });
     }
@@ -120,10 +120,10 @@ public sealed class IndexModel(
 
     private async Task LoadAsync(CancellationToken cancellationToken)
     {
-        var recent = await catalog.RecentAsync(0, 8, cancellationToken);
+        var recent = await catalog.RecentAsync(Security.Identity.SubjectOf(User), 0, 8, cancellationToken);
         RecentBooks = recent.Items;
         TotalBooks = recent.Total;
-        ActiveJobs = await downloads.ActiveAsync(cancellationToken);
+        ActiveJobs = await downloads.ActiveAsync(Security.Person.Of(User), cancellationToken);
         Plugins =
         [
             .. plugins.Usable.Select(plugin => new PluginChoice(plugin.Name, plugin.DisplayName))

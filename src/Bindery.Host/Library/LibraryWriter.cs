@@ -13,7 +13,7 @@ public sealed record ImportResult(Guid? BookId, string? Title, bool AlreadyHeld,
 }
 
 /// <summary>
-/// The two ways a book enters or leaves the library without a plugin: uploaded by hand, and
+/// The two ways a book enters or leaves a shelf without a plugin: uploaded by hand, and
 /// deleted by hand.
 /// </summary>
 /// <remarks>
@@ -21,40 +21,53 @@ public sealed record ImportResult(Guid? BookId, string? Title, bool AlreadyHeld,
 /// truth, so they move first and the index follows. On delete that ordering matters twice
 /// over: a crash after the directory is gone leaves a row that the next rescan removes,
 /// whereas the reverse leaves files no row points at and no rescan reunites.
+/// <para>
+/// The files are shared and the shelves are not. Uploading a file someone else already
+/// filed shelves their copy; deleting takes the book off your shelf, and only the last
+/// owner leaving deletes the files. Neither says so: what is on other people's shelves is
+/// not this person's business.
+/// </para>
 /// </remarks>
 public sealed class LibraryWriter(
     BinderyDbContext db,
     LibraryStore library,
     BookIndexer indexer,
+    ShelfService shelves,
     IOptions<BinderyOptions> options,
     ILogger<LibraryWriter> logger)
 {
     private readonly UploadOptions _uploads = options.Value.Uploads;
 
-    /// <summary>Removes a book's files and then its rows. False when there was no such book.</summary>
-    public async Task<bool> DeleteAsync(Guid bookId, CancellationToken cancellationToken)
+    /// <summary>
+    /// Takes a book off <paramref name="owner"/>'s shelf, removing its files and rows when
+    /// nobody else has it. False when it was not on their shelf.
+    /// </summary>
+    public async Task<bool> DeleteAsync(Guid bookId, string owner, CancellationToken cancellationToken)
     {
-        var book = await db.Books.FirstOrDefaultAsync(candidate => candidate.Id == bookId, cancellationToken);
+        var remaining = await shelves.RemoveAsync(bookId, owner, async book =>
+        {
+            if (!string.IsNullOrEmpty(book.DirectoryPath))
+            {
+                library.DeleteBook(book.DirectoryPath);
+            }
 
-        if (book is null)
+            // Jobs keep their history: the foreign key is SET NULL precisely so that losing
+            // the book does not lose the record that it was once acquired.
+            db.Books.Remove(book);
+            await db.SaveChangesAsync(cancellationToken);
+            logger.LogInformation("deleted {Title} ({Book}) and its files", book.Title, book.Id);
+        }, cancellationToken);
+
+        if (remaining is null)
         {
             return false;
         }
 
-        var title = book.Title;
-
-        if (!string.IsNullOrEmpty(book.DirectoryPath))
+        if (remaining == 0)
         {
-            library.DeleteBook(book.DirectoryPath);
+            await indexer.PruneEmptyGroupingsAsync(cancellationToken);
         }
 
-        // Jobs keep their history: the foreign key is SET NULL precisely so that losing the
-        // book does not lose the record that it was once acquired.
-        db.Books.Remove(book);
-        await db.SaveChangesAsync(cancellationToken);
-        await indexer.PruneEmptyGroupingsAsync(cancellationToken);
-
-        logger.LogInformation("deleted {Title} ({Book}) and its files", title, bookId);
         return true;
     }
 
@@ -69,6 +82,7 @@ public sealed class LibraryWriter(
     /// person called it.
     /// </remarks>
     public async Task<ImportResult> ImportAsync(
+        string owner,
         Stream content,
         string fileName,
         string? titleOverride,
@@ -115,11 +129,17 @@ public sealed class LibraryWriter(
 
             if (duplicate is not null)
             {
-                return new ImportResult(duplicate.BookId, duplicate.Title, true, null);
+                // "Already held" means on *your* shelf. Someone else's copy is shelved for
+                // you without a word about whose it was.
+                var added = await shelves.AddAsync(duplicate.BookId, owner, cancellationToken);
+                return new ImportResult(duplicate.BookId, duplicate.Title, !added, null);
             }
 
             var inspection = format == "epub" ? EpubReader.Inspect(stagedPath) : null;
-            var sidecar = BuildSidecar(inspection?.Metadata, fileName, titleOverride, authorOverride);
+            var sidecar = BuildSidecar(inspection?.Metadata, fileName, titleOverride, authorOverride) with
+            {
+                Owners = [new SidecarOwner(owner, DateTimeOffset.UtcNow)]
+            };
 
             var staged = new List<StagedFile>
             {

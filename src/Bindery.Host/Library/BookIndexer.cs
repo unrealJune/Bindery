@@ -24,6 +24,7 @@ public sealed class BookIndexer(BinderyDbContext db, LibraryStore library, ILogg
             .Include(book => book.Authors)
             .Include(book => book.Tags)
             .Include(book => book.Files)
+            .Include(book => book.Shelf)
             .FirstOrDefaultAsync(book => book.Id == id || book.DirectoryPath == directoryPath, cancellationToken);
 
     /// <summary>
@@ -117,8 +118,40 @@ public sealed class BookIndexer(BinderyDbContext db, LibraryStore library, ILogg
             });
         }
 
+        if (metadata.Owners is { } owners)
+        {
+            SyncShelf(book, owners);
+        }
+
         await db.SaveChangesAsync(cancellationToken);
         return new IndexedBook(book, isNew);
+    }
+
+    /// <summary>
+    /// Makes the index's shelf entries exactly the sidecar's owners. A sidecar with no
+    /// <c>Owners</c> at all predates shelves and leaves the index alone; the founder adopts
+    /// it (<see cref="ShelfService.AdoptOrphansAsync"/>), which writes the sidecar too.
+    /// </summary>
+    private void SyncShelf(BookEntity book, IReadOnlyList<SidecarOwner> owners)
+    {
+        var wanted = owners
+            .Where(owner => !string.IsNullOrEmpty(owner.Subject))
+            .GroupBy(owner => owner.Subject, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.Min(owner => owner.AddedAt), StringComparer.Ordinal);
+
+        foreach (var entry in book.Shelf.Where(entry => !wanted.ContainsKey(entry.Owner)).ToList())
+        {
+            book.Shelf.Remove(entry);
+            db.Shelves.Remove(entry);
+        }
+
+        foreach (var (subject, addedAt) in wanted)
+        {
+            if (book.Shelf.All(entry => entry.Owner != subject))
+            {
+                book.Shelf.Add(new ShelfEntryEntity { Book = book, Owner = subject, AddedAt = addedAt });
+            }
+        }
     }
 
     /// <summary>Drops authors, tags, and series that no longer hold a book.</summary>
@@ -145,6 +178,7 @@ public sealed class BookIndexer(BinderyDbContext db, LibraryStore library, ILogg
         await entry.Collection(candidate => candidate.Authors).LoadAsync(cancellationToken);
         await entry.Collection(candidate => candidate.Tags).LoadAsync(cancellationToken);
         await entry.Collection(candidate => candidate.Files).LoadAsync(cancellationToken);
+        await entry.Collection(candidate => candidate.Shelf).LoadAsync(cancellationToken);
     }
 
     private async Task<AuthorEntity> GetOrAddAuthorAsync(string name, CancellationToken cancellationToken) =>

@@ -53,6 +53,27 @@ CONFIG = [
     },
 ]
 
+# Everything Hedgerow holds is shared: one store and one bot, from which every person's copy
+# of the book is built. Changing any of it changes what everyone sees, so it is an admin's
+# (PLUGIN-PROTOCOL.md §2.3). Members read; the host refuses these paths and the action to
+# them before forwarding, and main.py checks X-Bindery-Role again behind it.
+ADMIN_PATHS = [
+    "/sources",
+    "/api/order",
+    "/api/pin",
+    "/api/reset",
+    "/api/work",
+    "/api/binding",
+    "/api/chapter",
+]
+ADMIN_ACTIONS = {"forget"}
+
+
+def is_admin_path(route: str) -> bool:
+    """Whether a UI route sits under an admin path: the path itself or anything below it."""
+    path = "/" + route.strip("/")
+    return any(path == prefix or path.startswith(prefix + "/") for prefix in ADMIN_PATHS)
+
 ACTIONS = [
     {
         "name": "pending",
@@ -81,6 +102,7 @@ ACTIONS = [
     {
         "name": "forget",
         "label": "Forget a work",
+        "access": "admin",
         "description": "Stop tracking a work: its ingested chapters and any channel bound "
                        "to it are deleted. A book already filed in the library is untouched.",
         "input": [
@@ -101,8 +123,9 @@ UI = {
     "entry": "/",
     "nav": [
         {"label": "Chapters", "path": "/", "icon": "book"},
-        {"label": "Sources", "path": "/sources", "icon": "settings", "section": "settings"},
+        {"label": "Sources", "path": "/sources", "icon": "settings", "section": "settings", "access": "admin"},
     ],
+    "adminPaths": ADMIN_PATHS,
 }
 
 

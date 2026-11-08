@@ -56,6 +56,7 @@ builder.Services.AddHttpClient(PluginClient.StreamClient, http =>
 });
 
 builder.Services.AddSingleton<PluginNotifyTokens>();
+builder.Services.AddSingleton<PluginPseudonyms>();
 builder.Services.AddSingleton<PluginClient>();
 builder.Services.AddSingleton<PluginRegistry>();
 builder.Services.AddSingleton<PluginResolver>();
@@ -75,6 +76,7 @@ builder.Services.AddScoped<DownloadRunner>();
 builder.Services.AddScoped<BookIndexer>();
 builder.Services.AddScoped<LibraryScanner>();
 builder.Services.AddScoped<LibraryWriter>();
+builder.Services.AddScoped<ShelfService>();
 builder.Services.AddHostedService<DownloadWorker>();
 builder.Services.AddHostedService<UpdateScheduler>();
 
@@ -174,6 +176,10 @@ using (var scope = app.Services.CreateScope())
     await db.Database.MigrateAsync();
 
     scope.ServiceProvider.GetRequiredService<LibraryStore>().EnsureRoot();
+
+    // Books from before shelves existed go to the earliest person seen. A no-op once done,
+    // and on a fresh install with nobody yet — the first sign-in does it then.
+    await scope.ServiceProvider.GetRequiredService<ShelfService>().AdoptOrphansAsync(CancellationToken.None);
 }
 
 if (options.Auth.Mode == AuthMode.None)

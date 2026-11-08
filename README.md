@@ -121,6 +121,21 @@ are the source of truth; the database is a rebuildable index.
 OIDC (generic — Entra, Authentik, Keycloak, Dex) for the web UI. Separate long-lived feed
 tokens for OPDS, because ereader apps can't do an OAuth redirect.
 
+## Several people, one install
+
+Everyone who signs in gets their own **shelf**, **e-readers**, **reading progress**,
+**download history**, and **library cards**. Nobody sees anyone else's. Files are stored
+once: if two people download the same story, it is filed once and appears on both shelves,
+and withdrawing it only takes it off yours — the files go when the last person lets go.
+
+**Admins** manage what is shared: plugins and their installation settings, library
+rescans, and plugin screens marked admin-only. Set `Bindery:Auth:AdminClaim` (default
+`groups`) and `Bindery:Auth:AdminValues` to say who. Group membership is read when someone
+signs in, so taking a person out of the admin group applies at their next sign-in. With no values, the first person who
+ever signed in is the admin — which is what an install from before shelves already meant,
+and everything already in the library lands on that person's shelf. Personal plugin
+settings — an AO3 login, say — are each person's own, under **Plugins → Your settings**.
+
 ## Running it
 
 The quickest look, with a plugin alongside it:

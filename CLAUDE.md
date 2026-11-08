@@ -171,10 +171,30 @@ Everything that was true of this tier is still true, in roughly the order it bre
 - Docker may be unavailable (no daemon) in agent sandboxes. Validate Dockerfiles by
   inspection and let CI build them.
 
+## People and shelves
+
+Several people share one install. Files are shared; everything else is per person — see
+`docs/ARCHITECTURE.md` "People and shelves".
+
+- **Every catalog query filters by owner, through the shelf.** `CatalogService`,
+  `ReadProgressService`, and `LibraryWriter` take the owner first; OPDS and the API pass
+  `Identity.SubjectOf(user)`. Someone else's book is a 404, never a 403.
+- **Jobs are scoped by `Person`** (`DownloadService` — `VisibleTo`/`ActionableBy`).
+  Admins see all; others see their own plus unattended updates of books they hold.
+- **Never call `ShelfService.AddAsync`/`RemoveAsync` while holding `ShelfService.HoldAsync`.**
+  They take the same gate; it deadlocks.
+- **Shelves live in the sidecar too** (`owners`). Change `ShelfEntries` only through
+  `ShelfService`, which keeps both in step, or a rescan will undo you.
+- **Admin-only is `AuthPolicies.Admin` / `Identity.IsAdmin`.** The role is derived per request
+  by `BinderyClaimsTransformation`; never read it from a cookie or a header.
+- **A user-scoped plugin value goes only to its owner's requests.** `PluginSettingsStore`
+  takes the acting person on every read. Plugins get a pseudonym (`PluginPseudonyms`),
+  never the OIDC subject, and the host always sets `X-Bindery-User`/`Role` itself.
+
 ## Circulation and notifications
 
-Library circulation (protocol §3.8, `docs/CIRCULATION.md`) is the one place Bindery is
-multi-user on purpose: a library card is a person's.
+Library circulation (protocol §3.8, `docs/CIRCULATION.md`) is per person like the rest, and
+the strictest about it: a library card is a person's.
 
 - **Every circulation query filters by owner.** `CirculationAccountStore` and
   `CirculationService` take the owner on every method. Do not add a lookup by id alone.

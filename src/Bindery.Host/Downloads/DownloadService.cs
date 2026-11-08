@@ -1,5 +1,6 @@
 using Bindery.Host.Data;
 using Bindery.Host.Plugins;
+using Bindery.Host.Security;
 using Microsoft.EntityFrameworkCore;
 
 namespace Bindery.Host.Downloads;
@@ -12,6 +13,11 @@ public sealed record EnqueueResult(DownloadJobEntity? Job, string? Problem)
 /// <summary>
 /// Queueing, cancelling, and retrying downloads. The request-thread half of the pipeline.
 /// </summary>
+/// <remarks>
+/// A job belongs to whoever queued it. A member sees their own, plus the jobs nobody queued
+/// — scheduled updates, plugin hints — for books on their shelf; an admin sees them all.
+/// Only an admin acts on a job someone else queued.
+/// </remarks>
 public sealed class DownloadService(
     BinderyDbContext db,
     DownloadQueue queue,
@@ -42,8 +48,12 @@ public sealed class DownloadService(
             return new EnqueueResult(null, "No installed plugin claims that URL.");
         }
 
+        // Per requester: someone else's job for the same URL is not this person's, and would
+        // not put the book on their shelf. The runner reconciles the two onto one book.
         var duplicate = await db.Jobs
-            .Where(job => job.Url == url && (job.Status == JobStatus.Queued || job.Status == JobStatus.Running))
+            .Where(job => job.Url == url
+                && job.RequesterSubject == requesterSubject
+                && (job.Status == JobStatus.Queued || job.Status == JobStatus.Running))
             .FirstOrDefaultAsync(cancellationToken);
 
         if (duplicate is not null)
@@ -68,14 +78,19 @@ public sealed class DownloadService(
         return new EnqueueResult(entity, null);
     }
 
-    /// <summary>Queues a refresh of a book Bindery already holds.</summary>
+    /// <summary>
+    /// Queues a refresh of a book Bindery already holds. A person may only refresh a book on
+    /// their own shelf; with no requester — the scheduler, a plugin hint — any book.
+    /// </summary>
     public async Task<EnqueueResult> EnqueueUpdateAsync(
         Guid bookId,
         string? requestedBy,
         CancellationToken cancellationToken,
         string? requesterSubject = null)
     {
-        var book = await db.Books.FirstOrDefaultAsync(candidate => candidate.Id == bookId, cancellationToken);
+        var book = await db.Books
+            .Where(candidate => requesterSubject == null || candidate.Shelf.Any(entry => entry.Owner == requesterSubject))
+            .FirstOrDefaultAsync(candidate => candidate.Id == bookId, cancellationToken);
 
         if (book is null)
         {
@@ -99,9 +114,9 @@ public sealed class DownloadService(
         return result;
     }
 
-    public async Task<bool> CancelAsync(Guid jobId, CancellationToken cancellationToken)
+    public async Task<bool> CancelAsync(Person person, Guid jobId, CancellationToken cancellationToken)
     {
-        var job = await db.Jobs.FirstOrDefaultAsync(candidate => candidate.Id == jobId, cancellationToken);
+        var job = await ActionableBy(person).FirstOrDefaultAsync(candidate => candidate.Id == jobId, cancellationToken);
 
         if (job is null || job.Status is JobStatus.Succeeded or JobStatus.Failed or JobStatus.Cancelled or JobStatus.Unchanged)
         {
@@ -122,9 +137,9 @@ public sealed class DownloadService(
         return true;
     }
 
-    public async Task<bool> RetryAsync(Guid jobId, CancellationToken cancellationToken)
+    public async Task<bool> RetryAsync(Person person, Guid jobId, CancellationToken cancellationToken)
     {
-        var job = await db.Jobs.FirstOrDefaultAsync(candidate => candidate.Id == jobId, cancellationToken);
+        var job = await ActionableBy(person).FirstOrDefaultAsync(candidate => candidate.Id == jobId, cancellationToken);
 
         if (job is null || job.Status is JobStatus.Queued or JobStatus.Running)
         {
@@ -145,23 +160,51 @@ public sealed class DownloadService(
         return true;
     }
 
-    public Task<List<DownloadJobEntity>> RecentAsync(int limit, CancellationToken cancellationToken) =>
-        db.Jobs
+    public Task<List<DownloadJobEntity>> RecentAsync(Person person, int limit, CancellationToken cancellationToken) =>
+        VisibleTo(person)
             .AsNoTracking()
             .OrderByDescending(job => job.CreatedAt)
             .Take(limit)
             .ToListAsync(cancellationToken);
 
-    public Task<List<DownloadJobEntity>> ActiveAsync(CancellationToken cancellationToken) =>
-        db.Jobs
+    /// <summary>The jobs about one book, as far as <paramref name="person"/> may see them.</summary>
+    public Task<List<DownloadJobEntity>> ForBookAsync(Person person, Guid bookId, int limit, CancellationToken cancellationToken) =>
+        VisibleTo(person)
+            .AsNoTracking()
+            .Where(job => job.BookId == bookId)
+            .OrderByDescending(job => job.CreatedAt)
+            .Take(limit)
+            .ToListAsync(cancellationToken);
+
+    public Task<List<DownloadJobEntity>> ActiveAsync(Person person, CancellationToken cancellationToken) =>
+        VisibleTo(person)
             .AsNoTracking()
             .Where(job => job.Status == JobStatus.Queued || job.Status == JobStatus.Running)
             .OrderBy(job => job.CreatedAt)
             .ToListAsync(cancellationToken);
 
-    public Task<DownloadJobEntity?> FindAsync(Guid jobId, CancellationToken cancellationToken) =>
-        db.Jobs
+    public Task<DownloadJobEntity?> FindAsync(Person person, Guid jobId, CancellationToken cancellationToken) =>
+        VisibleTo(person)
             .AsNoTracking()
             .Include(job => job.Log.OrderBy(entry => entry.At))
             .FirstOrDefaultAsync(job => job.Id == jobId, cancellationToken);
+
+    private IQueryable<DownloadJobEntity> VisibleTo(Person person)
+    {
+        if (person.IsAdmin)
+        {
+            return db.Jobs;
+        }
+
+        var subject = person.Subject;
+
+        return db.Jobs.Where(job =>
+            job.RequesterSubject == subject
+            || (job.RequesterSubject == null
+                && job.BookId != null
+                && db.Shelves.Any(entry => entry.BookId == job.BookId && entry.Owner == subject)));
+    }
+
+    private IQueryable<DownloadJobEntity> ActionableBy(Person person) =>
+        person.IsAdmin ? db.Jobs : db.Jobs.Where(job => job.RequesterSubject == person.Subject);
 }

@@ -1,5 +1,6 @@
 using Bindery.Core;
 using Bindery.Host.Plugins;
+using Bindery.Host.Security;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 
@@ -9,17 +10,32 @@ namespace Bindery.Host.Pages;
 /// Tier 1 of the UI story: every plugin gets a settings form and an action form rendered
 /// from its manifest, whether or not it ships any HTML of its own.
 /// </summary>
+/// <remarks>
+/// Settings come in two sections, by the field's manifest scope (protocol §4.1). The
+/// installation's are an admin's to see and change; everyone gets "your settings" for the
+/// user-scoped fields, and sees only their own values there.
+/// </remarks>
 public sealed class PluginsModel(
     PluginRegistry registry,
     PluginSettingsStore settings,
     PluginActionService actions) : PageModel
 {
+    /// <summary>The form value that selects the personal section; anything else is install.</summary>
+    public const string PersonalScope = "user";
+
     public IReadOnlyList<PluginCard> Cards { get; private set; } = [];
+
+    public bool IsAdmin => Identity.IsAdmin(User);
 
     public async Task OnGetAsync(CancellationToken cancellationToken) => await LoadAsync(cancellationToken);
 
     public async Task<IActionResult> OnPostRefreshAsync(string plugin, CancellationToken cancellationToken)
     {
+        if (!IsAdmin)
+        {
+            return Forbid();
+        }
+
         var descriptor = registry.Find(plugin);
 
         if (descriptor is null)
@@ -36,7 +52,7 @@ public sealed class PluginsModel(
         return RedirectToPage();
     }
 
-    public async Task<IActionResult> OnPostSaveAsync(string plugin, CancellationToken cancellationToken)
+    public async Task<IActionResult> OnPostSaveAsync(string plugin, string? scope, CancellationToken cancellationToken)
     {
         var descriptor = registry.Find(plugin);
 
@@ -45,10 +61,15 @@ public sealed class PluginsModel(
             return NotFound();
         }
 
+        if (OwnerFor(scope) is not { } section)
+        {
+            return Forbid();
+        }
+
         var manifest = descriptor.Manifest;
-        var submitted = Collect(manifest.Config.AsList());
-        var current = await settings.GetForDisplayAsync(manifest, cancellationToken);
-        var problems = PluginSettingsStore.Validate(manifest, submitted, current.SecretsSet);
+        var submitted = Collect(PluginSettingsStore.FieldsFor(manifest, section.Owner));
+        var current = await settings.GetForDisplayAsync(manifest, section.Owner, cancellationToken);
+        var problems = PluginSettingsStore.Validate(manifest, section.Owner, submitted, current.SecretsSet);
 
         if (problems.Count > 0)
         {
@@ -56,19 +77,26 @@ public sealed class PluginsModel(
             return RedirectToPage();
         }
 
-        await settings.SaveAsync(manifest, submitted, cancellationToken);
-        TempData["Notice"] = $"Settings saved for {descriptor.DisplayName}.";
+        await settings.SaveAsync(manifest, section.Owner, submitted, cancellationToken);
+        TempData["Notice"] = section.Owner is null
+            ? $"Installation settings saved for {descriptor.DisplayName}."
+            : $"Your settings saved for {descriptor.DisplayName}.";
         return RedirectToPage();
     }
 
-    public async Task<IActionResult> OnPostClearAsync(string plugin, string key, CancellationToken cancellationToken)
+    public async Task<IActionResult> OnPostClearAsync(string plugin, string key, string? scope, CancellationToken cancellationToken)
     {
         if (registry.Find(plugin) is null)
         {
             return NotFound();
         }
 
-        await settings.ClearAsync(plugin, key, cancellationToken);
+        if (OwnerFor(scope) is not { } section)
+        {
+            return Forbid();
+        }
+
+        await settings.ClearAsync(plugin, key, section.Owner, cancellationToken);
         TempData["Notice"] = "Value cleared.";
         return RedirectToPage();
     }
@@ -89,10 +117,21 @@ public sealed class PluginsModel(
         var input = Collect(declared.Input.AsList())
             .ToDictionary(pair => pair.Key, pair => pair.Value ?? string.Empty, StringComparer.Ordinal);
 
-        var result = await actions.InvokeAsync(plugin, action, input, cancellationToken);
+        var result = await actions.InvokeAsync(plugin, action, input, Person.Of(User), cancellationToken);
 
         return Partial("_ActionResult", result);
     }
+
+    /// <summary>
+    /// Which section a post edits: the person's own, or — for an admin only — the
+    /// installation's. Null means "not yours to change".
+    /// </summary>
+    private Section? OwnerFor(string? scope) =>
+        scope == PersonalScope
+            ? new Section(Identity.SubjectOf(User))
+            : IsAdmin ? new Section(null) : null;
+
+    private sealed record Section(string? Owner);
 
     private Dictionary<string, string?> Collect(IReadOnlyList<Protocol.ConfigField> fields)
     {
@@ -124,22 +163,47 @@ public sealed class PluginsModel(
 
     private async Task LoadAsync(CancellationToken cancellationToken)
     {
+        var person = Person.Of(User);
+        var empty = new PluginSettingsView(new Dictionary<string, string>(), new HashSet<string>());
         var cards = new List<PluginCard>();
 
         foreach (var descriptor in registry.All)
         {
-            var view = descriptor.Manifest is null
-                ? new PluginSettingsView(new Dictionary<string, string>(), new HashSet<string>())
-                : await settings.GetForDisplayAsync(descriptor.Manifest, cancellationToken);
+            var manifest = descriptor.Manifest;
 
-            cards.Add(new PluginCard(descriptor, view));
+            if (manifest is null)
+            {
+                cards.Add(new PluginCard(descriptor, null, empty, []));
+                continue;
+            }
+
+            var install = person.IsAdmin
+                ? await settings.GetForDisplayAsync(manifest, null, cancellationToken)
+                : null;
+            var mine = await settings.GetForDisplayAsync(manifest, person.Subject, cancellationToken);
+
+            cards.Add(new PluginCard(descriptor, install, mine, PluginActionService.AvailableTo(manifest, person)));
         }
 
         Cards = cards;
     }
 }
 
-public sealed record PluginCard(PluginDescriptor Descriptor, PluginSettingsView Settings);
+/// <param name="Install">The installation's settings; null unless the viewer is an admin.</param>
+/// <param name="Mine">The viewer's own values for the user-scoped fields.</param>
+/// <param name="Actions">The declared actions the viewer may run.</param>
+public sealed record PluginCard(
+    PluginDescriptor Descriptor,
+    PluginSettingsView? Install,
+    PluginSettingsView Mine,
+    IReadOnlyList<Protocol.PluginAction> Actions);
+
+/// <summary>One settings section of a plugin card; <paramref name="Scope"/> is null for install.</summary>
+public sealed record SettingsSectionView(
+    string Plugin,
+    string? Scope,
+    IReadOnlyList<Protocol.ConfigField> Fields,
+    PluginSettingsView Values);
 
 /// <summary>One declared field, plus what the UI is allowed to know about its value.</summary>
 public sealed record ConfigFieldView(Protocol.ConfigField Field, string Value, bool SecretIsSet);

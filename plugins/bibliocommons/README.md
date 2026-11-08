@@ -28,6 +28,12 @@ stores it per person with the PIN encrypted, and sends it to this plugin on each
 plugin keeps the signed-in library session **in memory only** — there is no volume, the root
 filesystem is read-only, and a restart costs each card one fresh sign-in.
 
+Every circulation call also carries `X-Bindery-User` — the card owner's per-plugin pseudonym —
+and `X-Bindery-Role: member` (protocol §2.3). The plugin needs neither: the account in the
+request body is the whole of whose card it is, and sessions are keyed by that account. It has
+no install config, no admin actions, and no UI of its own, so there is nothing here for a role
+to gate.
+
 ## Libraries
 
 ```
@@ -67,7 +73,7 @@ This matters, so it is stated plainly.
 **Not verified — no library card was used while building this:**
 
 - That a successful sign-in yields the `bc_access_token` / `session_id` cookies and an
-  `accountId` on the dashboard.
+  the patron's account id in the `/v2/` page state (chosen by matching the card's barcode).
 - The exact shapes of the holds and checkouts responses, and of the place/cancel requests.
 
 All of that lives in [`app/account.py`](app/account.py), reads several plausible keys,

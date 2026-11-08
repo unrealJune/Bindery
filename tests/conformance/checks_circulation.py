@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import re
 
-from checks_protocol import CONFIG_KEY_RE, _check_fields
+from checks_protocol import CONFIG_KEY_RE, _check_fields, _notes_ignored_scope
 from harness import Ctx, Fail, check, expect, expect_error_body, expect_status, expect_type
 
 MEDIUMS = {"physical", "digital"}
@@ -125,6 +125,7 @@ def circulation_manifest(ctx: Ctx) -> None:
     fields = block.get("accountFields")
     expect(isinstance(fields, list) and fields, "circulation.accountFields must be a non-empty list")
     _check_fields(fields, "circulation.accountFields")
+    _notes_ignored_scope(ctx, fields, "circulation.accountFields")
     mediums = block.get("mediums", sorted(MEDIUMS))
     expect(isinstance(mediums, list) and mediums and set(mediums) <= MEDIUMS,
            f"circulation.mediums must be a non-empty subset of {sorted(MEDIUMS)}")

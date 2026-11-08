@@ -23,6 +23,8 @@ CONFIG_KEY_RE = re.compile(r"^[a-z0-9_]{1,64}$")
 ACTION_NAME_RE = re.compile(r"^[a-z0-9_]{1,32}$")
 ARTIFACT_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 FIELD_TYPES = {"string", "secret", "text", "bool", "int", "select", "url"}
+CONFIG_SCOPES = {"install", "user"}
+ACCESS_LEVELS = {"member", "admin"}
 ERROR_CODES = {
     "unsupported_url",
     "not_found",
@@ -204,6 +206,9 @@ def _check_fields(fields, where: str) -> None:
                 re.compile(field_def["pattern"])
             except re.error as exc:
                 raise Fail(f"{where}.{key}: 'pattern' does not compile ({exc})")
+        if "scope" in field_def:
+            expect(field_def["scope"] in CONFIG_SCOPES,
+                   f"{where}.{key}: 'scope' must be one of {sorted(CONFIG_SCOPES)}, got {field_def['scope']!r}")
 
 
 @check("manifest.config-schema", group="manifest")
@@ -212,9 +217,15 @@ def manifest_config_schema(ctx: Ctx) -> None:
     _check_fields(ctx.manifest.get("config", []), "config")
 
 
+def _notes_ignored_scope(ctx: Ctx, fields, where: str) -> None:
+    for field_def in fields or []:
+        if isinstance(field_def, dict) and "scope" in field_def:
+            ctx.note(f"{where}.{field_def.get('key')}: 'scope' only applies to config and is ignored here")
+
+
 @check("manifest.actions-schema", group="manifest")
 def manifest_actions_schema(ctx: Ctx) -> None:
-    """Every declared action has a valid name, input schema, and output kind."""
+    """Every declared action has a valid name, input schema, output kind, and access."""
     actions = ctx.manifest.get("actions", [])
     expect_type(actions, list, "actions")
     seen = set()
@@ -228,6 +239,10 @@ def manifest_actions_schema(ctx: Ctx) -> None:
         expect(isinstance(action.get("label"), str) and action["label"].strip() != "",
                f"action {name}: 'label' is required")
         _check_fields(action.get("input", []), f"actions.{name}.input")
+        _notes_ignored_scope(ctx, action.get("input", []), f"actions.{name}.input")
+        if "access" in action:
+            expect(action["access"] in ACCESS_LEVELS,
+                   f"actions.{name}: 'access' must be member|admin, got {action['access']!r}")
         output = action.get("output", {})
         expect_type(output, dict, f"actions.{name}.output")
         kind = output.get("kind")
@@ -240,7 +255,7 @@ def manifest_actions_schema(ctx: Ctx) -> None:
 
 @check("manifest.ui", group="manifest")
 def manifest_ui(ctx: Ctx) -> None:
-    """ui.mode is a known tier and nav entries are well-formed."""
+    """ui.mode is a known tier, and nav entries and adminPaths are well-formed."""
     ui = ctx.manifest.get("ui", {})
     expect_type(ui, dict, "ui")
     mode = ui.get("mode", "declarative")
@@ -261,8 +276,31 @@ def manifest_ui(ctx: Ctx) -> None:
         expect(isinstance(path, str) and path.startswith("/"),
                f"ui.nav 'path' must start with '/', got {path!r}")
         expect(".." not in path, f"ui.nav 'path' must not traverse: {path!r}")
+        if "access" in nav_entry:
+            expect(nav_entry["access"] in ACCESS_LEVELS,
+                   f"ui.nav {path}: 'access' must be member|admin, got {nav_entry['access']!r}")
+    admin_paths = ui.get("adminPaths", [])
+    expect_type(admin_paths, list, "ui.adminPaths")
+    for prefix in admin_paths:
+        expect(isinstance(prefix, str) and prefix.startswith("/"),
+               f"ui.adminPaths entries must start with '/', got {prefix!r}")
+        expect(".." not in prefix, f"ui.adminPaths entry must not traverse: {prefix!r}")
+    for nav_entry in ui.get("nav", []):
+        if nav_entry.get("access") == "admin" and not _covered(nav_entry["path"], admin_paths):
+            ctx.note(f"ui.nav {nav_entry['path']} is admin-only but no ui.adminPaths entry covers it — "
+                     "hiding a link protects nothing (PLUGIN-PROTOCOL.md §6)")
     if mode == "declarative" and ui.get("nav"):
         ctx.note("ui.mode is 'declarative' but ui.nav is declared — nav is only meaningful for a UI tier")
+
+
+def _covered(path: str, prefixes) -> bool:
+    """The host's prefix rule: the path itself, or anything below it."""
+    path = path.split("?", 1)[0]
+    for prefix in prefixes:
+        trimmed = prefix.rstrip("/") or "/"
+        if trimmed == "/" or path == trimmed or path.startswith(trimmed + "/"):
+            return True
+    return False
 
 
 @check("manifest.stable", group="manifest")

@@ -2,7 +2,7 @@
 @inject PluginUiProxy PluginUi
 @{
     var path = Context.Request.Path;
-    var pluginNavigation = PluginUi.AllNavigation();
+    var pluginNavigation = PluginUi.AllNavigation(Bindery.Host.Security.Identity.IsAdmin(User));
 }
 <!doctype html>
 <html lang="en">

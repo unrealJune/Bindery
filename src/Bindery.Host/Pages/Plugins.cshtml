@@ -61,43 +61,29 @@
             <p class="notice notice-error" role="alert">@descriptor.Error</p>
         }
 
-        <form method="post" asp-page-handler="Refresh" class="plugin-refresh">
-            <input type="hidden" name="plugin" value="@descriptor.Name" />
-            <button class="text-action" type="submit">Ask again</button>
-        </form>
-
-        @if (manifest is not null && manifest.Config.AsList().Count > 0)
+        @if (Model.IsAdmin)
         {
-            <form method="post" asp-page-handler="Save" class="plugin-form">
+            <form method="post" asp-page-handler="Refresh" class="plugin-refresh">
                 <input type="hidden" name="plugin" value="@descriptor.Name" />
-                <h3>Settings</h3>
-                @foreach (var field in manifest.Config.AsList())
-                {
-                    <partial name="_ConfigField" model="new ConfigFieldView(field, card.Settings.ValueFor(field.Key), card.Settings.IsSecretSet(field.Key))" />
-                }
-                <div class="form-actions">
-                    <button class="button button-primary" type="submit"><span>Save settings</span></button>
-                </div>
+                <button class="text-action" type="submit">Ask again</button>
             </form>
-
-            @if (card.Settings.SecretsSet.Count > 0)
-            {
-                <form method="post" asp-page-handler="Clear" class="plugin-secrets">
-                    <input type="hidden" name="plugin" value="@descriptor.Name" />
-                    <span>Stored secrets:</span>
-                    @foreach (var key in card.Settings.SecretsSet)
-                    {
-                        <button class="text-action danger" type="submit" name="key" value="@key">Clear @key</button>
-                    }
-                </form>
-            }
         }
 
-        @if (manifest is not null && manifest.Actions.AsList().Count > 0)
+        @if (manifest is not null && card.Install is not null && manifest.InstallConfig.AsList().Count > 0)
+        {
+            <partial name="_SettingsSection" model="new SettingsSectionView(descriptor.Name, null, manifest.InstallConfig.AsList(), card.Install)" />
+        }
+
+        @if (manifest is not null && manifest.UserConfig.AsList().Count > 0)
+        {
+            <partial name="_SettingsSection" model="new SettingsSectionView(descriptor.Name, PluginsModel.PersonalScope, manifest.UserConfig.AsList(), card.Mine)" />
+        }
+
+        @if (card.Actions.Count > 0)
         {
             <div class="plugin-actions">
                 <h3>Actions</h3>
-                @foreach (var action in manifest.Actions.AsList())
+                @foreach (var action in card.Actions)
                 {
                     var panel = $"action-{descriptor.Name}-{action.Name}";
                     <form class="action-form"

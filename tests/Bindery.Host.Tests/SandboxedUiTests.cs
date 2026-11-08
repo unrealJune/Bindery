@@ -157,7 +157,7 @@ public sealed class SandboxedUiTests : IAsyncLifetime
 
         Assert.NotNull(descriptor);
 
-        var nav = proxy.NavigationFor(descriptor);
+        var nav = proxy.NavigationFor(descriptor, isAdmin: true);
 
         Assert.NotEmpty(nav);
 

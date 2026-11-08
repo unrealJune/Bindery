@@ -7,12 +7,15 @@
 
 <header class="page-heading">
     <h1>Register of filed books</h1>
-    <form method="post" asp-page-handler="Scan">
-        <button class="button button-secondary" type="submit">
-            <span>Rescan volume</span>
-            <small>Rebuild the index</small>
-        </button>
-    </form>
+    @if (Model.CanScan)
+    {
+        <form method="post" asp-page-handler="Scan">
+            <button class="button button-secondary" type="submit">
+                <span>Rescan volume</span>
+                <small>Rebuild the index</small>
+            </button>
+        </form>
+    }
 </header>
 
 <section class="ledger-section">
@@ -39,7 +42,7 @@
     {
         <div class="empty-state empty-state-wide">
             <strong>Nothing filed under that.</strong>
-            <span>File a source from Intake, or rescan the volume if books were copied in by hand.</span>
+            <span>File a source from Intake@(Model.CanScan ? ", or rescan the volume if books were copied in by hand" : string.Empty).</span>
         </div>
     }
     else

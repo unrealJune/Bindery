@@ -46,3 +46,19 @@ def shell() -> str:
 </body>
 </html>
 """
+
+
+def admin_only() -> str:
+    """What a member gets for an admin path, should one ever reach the plugin."""
+    return """<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Hedgerow</title>
+  <link rel="stylesheet" href="/css/bindery.css">
+</head>
+<body>
+  <div class="bnd-card bnd-notice"><p>Only an admin can open this page.</p></div>
+</body>
+</html>
+"""

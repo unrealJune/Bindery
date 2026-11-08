@@ -62,6 +62,57 @@ public class BookEntity
     public List<BookTagEntity> Tags { get; set; } = new();
 
     public List<BookFileEntity> Files { get; set; } = new();
+
+    /// <summary>
+    /// Who has this book on their shelf. The files are shared — one copy on disk however
+    /// many people want it — and this is what decides whose catalog it appears in.
+    /// </summary>
+    public List<ShelfEntryEntity> Shelf { get; set; } = new();
+}
+
+/// <summary>
+/// One person's claim on one book.
+/// </summary>
+/// <remarks>
+/// Mirrored into the book's sidecar (<c>Owners</c>), so a rescan rebuilds every shelf: the
+/// sidecar is the source of truth here exactly as it is for the rest of the row.
+/// </remarks>
+public class ShelfEntryEntity
+{
+    public Guid BookId { get; set; }
+
+    public BookEntity Book { get; set; } = null!;
+
+    /// <summary>OIDC subject of the person whose shelf this is.</summary>
+    [MaxLength(200)]
+    public string Owner { get; set; } = string.Empty;
+
+    public DateTimeOffset AddedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+/// <summary>
+/// Someone who has signed in.
+/// </summary>
+/// <remarks>
+/// Not an account — the identity provider owns accounts. This is a register of who has
+/// been here, so there is an answer to "who did these books belong to before there were
+/// shelves" (the earliest person seen), and a name to show beside a job.
+/// </remarks>
+public class UserEntity
+{
+    /// <summary>OIDC subject. Every per-person row in the database is keyed on this.</summary>
+    [MaxLength(200)]
+    public string Subject { get; set; } = string.Empty;
+
+    [MaxLength(200)]
+    public string? DisplayName { get; set; }
+
+    [MaxLength(320)]
+    public string? Email { get; set; }
+
+    public DateTimeOffset FirstSeenAt { get; set; } = DateTimeOffset.UtcNow;
+
+    public DateTimeOffset LastSeenAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
 public class AuthorEntity
@@ -240,6 +291,13 @@ public class PluginSettingEntity
 
     [MaxLength(64)]
     public string Plugin { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Null for an install-scoped value; the person's subject for a user-scoped one
+    /// (protocol §4.1). A user-scoped value is only ever read back for its owner.
+    /// </summary>
+    [MaxLength(200)]
+    public string? Owner { get; set; }
 
     [MaxLength(64)]
     public string Key { get; set; } = string.Empty;

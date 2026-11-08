@@ -188,7 +188,7 @@ public sealed class ShelfTests(BinderyFixture fixture)
     }
 
     /// <summary>A minimal but genuine EPUB, so the reader has something real to read.</summary>
-    private static byte[] BuildEpub(
+    internal static byte[] BuildEpub(
         string title,
         string author,
         string? series = null,
