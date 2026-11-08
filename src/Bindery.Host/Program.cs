@@ -131,7 +131,7 @@ builder.Services.Configure<ForwardedHeadersOptions>(forwarded =>
     forwarded.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto | ForwardedHeaders.XForwardedHost;
     // Bindery sits behind an ingress it does not know the address of. Restricting this is
     // the deployment's job, via the chart's trustedProxies value.
-    forwarded.KnownNetworks.Clear();
+    forwarded.KnownIPNetworks.Clear();
     forwarded.KnownProxies.Clear();
 });
 

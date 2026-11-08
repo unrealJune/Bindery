@@ -12,7 +12,7 @@ through downloader plugins. First plugin: [FanFicFare](https://github.com/JimmXi
 
 | Decision | Choice | Why |
 |---|---|---|
-| Host stack | ASP.NET Core 8, C# | DI, hosting, OIDC, `BackgroundService`, EF Core. Boring on purpose. |
+| Host stack | ASP.NET Core 10, C# | Supported LTS; DI, hosting, OIDC, `BackgroundService`, EF Core. |
 | Core library | F# (`Bindery.Core`) | Feed shapes and protocol messages are algebraic data. DUs + exhaustive matching + no null is a real win for serialization code. |
 | Web UI | Razor Pages + htmx | Server-rendered, no node build, no bundler. Also the thing that makes plugin UI passthrough work (§5). |
 | Plugin transport | **HTTP only. Plugins are containers.** | No ALC, no subprocess, no plugin volume, no filesystem convention. |

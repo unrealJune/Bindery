@@ -5,7 +5,7 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS restore
 WORKDIR /src
 
-COPY NuGet.config Directory.Build.props ./
+COPY NuGet.config Directory.Build.props global.json ./
 COPY src/Bindery.Core/Bindery.Core.fsproj src/Bindery.Core/
 COPY src/Bindery.Host/Bindery.Host.csproj src/Bindery.Host/
 RUN dotnet restore src/Bindery.Host/Bindery.Host.csproj
@@ -18,7 +18,7 @@ RUN dotnet publish src/Bindery.Host/Bindery.Host.csproj \
     --no-restore \
     --output /app/publish
 
-FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 
 RUN apt-get update \
