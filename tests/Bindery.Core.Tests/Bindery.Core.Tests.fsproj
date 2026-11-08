@@ -10,6 +10,7 @@
   <ItemGroup>
     <Compile Include="Fixtures.fs" />
     <Compile Include="ProtocolTests.fs" />
+    <Compile Include="CirculationTests.fs" />
     <Compile Include="RoutingTests.fs" />
     <Compile Include="DomainTests.fs" />
     <Compile Include="EpubTests.fs" />

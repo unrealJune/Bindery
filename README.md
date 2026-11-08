@@ -20,6 +20,25 @@ A small self-hosted service that serves an **OPDS catalog** and acquires books t
 The first plugin wraps [FanFicFare](https://github.com/JimmXinu/FanFicFare): paste an AO3
 or FFN link, get an EPUB in your catalog.
 
+## Your public library, too
+
+Plugins can also speak **library circulation**: search your public library, place holds on
+physical books, and keep track of holds and loans. The
+[BiblioCommons plugin](plugins/bibliocommons/) covers Seattle Public Library, KCLS, and any
+other library whose catalog runs on BiblioCommons.
+
+- **Every card is its own person's.** Each signed-in person connects their own library cards;
+  PINs are encrypted and nobody else can see, search with, or be mailed about them.
+- **Physical and digital are never blurred.** Search filters on them first, and every result
+  and hold says which it is — a copy at a branch, or a licence in OverDrive/Libby or hoopla.
+- **Bindery tracks the lifecycle** — queued, on its way, ready on the shelf, picked up,
+  due, overdue — from what the library reports, and emails you when something needs you: a
+  hold is ready, a pickup deadline is close, a loan is due.
+- **Notifications are a host service**, shared by every plugin. Plugins report state; only
+  Bindery decides to send a message. Downloads use it too.
+
+Details: [`docs/CIRCULATION.md`](docs/CIRCULATION.md) and protocol §3.8.
+
 ## The idea
 
 **A plugin is a container that speaks HTTP.** Not a shared library, not a subprocess, not a

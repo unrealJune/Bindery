@@ -327,6 +327,14 @@ reading view. The host stays sync-agnostic: it stores positions keyed by (book, 
 and answers GETs; everything kosync knows about devices, debouncing, and direction
 strategies lives in the client.
 
+**Library circulation has since shipped** (protocol §3.8, `docs/CIRCULATION.md`). A plugin
+may declare `capabilities.circulation` and serve search, holds, and a per-account snapshot;
+the host owns per-person accounts (secrets encrypted), the hold/loan lifecycle as a pure F#
+reconcile function, and a notification subsystem with an outbox and an SMTP channel that
+downloads use too. The reference consumer is `plugins/bibliocommons` (Seattle Public Library,
+KCLS). This is the first per-person data in Bindery; the book library itself stays shared.
+Migration `AddCirculationAndNotifications` is additive and touches no book table.
+
 ## 11. Known risks
 
 1. **OPDS client compatibility.** Spec-valid ≠ works in KOReader. Test on real clients early.

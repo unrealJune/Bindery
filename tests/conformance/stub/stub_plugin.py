@@ -56,6 +56,7 @@ MANIFEST = {
         "metadata": True,
         "cover": True,
         "cancel": True,
+        "circulation": True,
     },
     "config": [
         {"key": "author_name", "label": "Author to report", "type": "string",
@@ -74,6 +75,18 @@ MANIFEST = {
          "input": [{"key": "q", "label": "Query", "type": "string", "required": True}],
          "output": {"kind": "list", "itemAction": "download"}},
     ],
+    # Protocol 3.8. A fabricated two-item catalog — one physical, one digital — so the suite's
+    # circulation checks have something known-good to run against.
+    "circulation": {
+        "accountFields": [
+            {"key": "library", "label": "Library", "type": "select", "required": True,
+             "options": [{"value": "stubville", "label": "Stubville Public Library"}]},
+            {"key": "card", "label": "Card number", "type": "string", "required": True},
+            {"key": "pin", "label": "PIN", "type": "secret", "required": True},
+        ],
+        "mediums": ["physical", "digital"],
+        "holdOperations": ["cancel", "suspend", "resume"],
+    },
     "ui": {
         "mode": "fragment",
         "nav": [
@@ -86,6 +99,23 @@ MANIFEST = {
 # jobId -> {"created": epoch, "artifacts": {artifactId: {...}}, "cancelled": bool}
 JOBS: dict = {}
 JOBS_LOCK = threading.Lock()
+
+# accountId -> {holdId: hold}. A stub has no library behind it, so its "remote" state is here.
+HOLDS: dict = {}
+HOLDS_LOCK = threading.Lock()
+
+CATALOG = [
+    {"id": "stub-1", "title": "A Physical Stub", "authors": ["Stub, A."], "year": "2026",
+     "url": "https://stub.invalid/record/stub-1", "medium": "physical", "format": "book",
+     "formatLabel": "Book", "provider": None,
+     "availability": {"status": "unavailable", "copies": 2, "availableCopies": 0, "holds": 3},
+     "holdable": True, "borrowUrl": None},
+    {"id": "stub-2", "title": "A Digital Stub", "authors": ["Stub, A."], "year": "2026",
+     "url": "https://stub.invalid/record/stub-2", "medium": "digital", "format": "ebook",
+     "formatLabel": "eBook", "provider": "StubDrive",
+     "availability": {"status": "available", "copies": 1, "availableCopies": 1, "holds": 0},
+     "holdable": False, "borrowUrl": "https://stub.invalid/borrow/stub-2"},
+]
 
 PNG_1PX = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
@@ -380,6 +410,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._action(unquote(path[len("/bindery/v1/actions/"):]))
         if path.startswith("/bindery/v1/ui"):
             return self._ui(path, parse_qs(parsed.query))
+        if path.startswith("/bindery/v1/circulation/"):
+            return self._circulation(path[len("/bindery/v1/circulation/"):])
         return self._error(404, "not_found", f"no route for POST {path}")
 
     def do_DELETE(self):  # noqa: N802
@@ -541,6 +573,76 @@ class Handler(BaseHTTPRequestHandler):
                            "subtitle": "fabricated by the stub",
                            "url": f"https://stub.invalid/works/{i}"} for i in range(1, 4)]}})
         return self._error(404, "not_found", f"no action named {name!r}")
+
+    def _circulation(self, route: str):
+        body = self._body()
+        if body is None:
+            return self._error(400, "internal", "request body is not valid JSON")
+        account = body.get("account")
+        if not isinstance(account, dict) or not isinstance(account.get("id"), str):
+            return self._error(422, "internal", "'account' with an 'id' is required")
+        fields = account.get("fields") or {}
+
+        def failure(code: str, message: str):
+            return self._json(200, {"status": "error",
+                                    "error": {"code": code, "message": message, "retryable": False}})
+
+        if route == "search":
+            medium = body.get("medium") or "any"
+            if medium not in ("any", "physical", "digital"):
+                return self._error(422, "internal", "'medium' must be any|physical|digital")
+            items = [i for i in CATALOG if medium == "any" or i["medium"] == medium]
+            return self._json(200, {"status": "ok", "total": len(items), "page": 1, "pages": 1,
+                                    "items": items})
+
+        # An unknown route is a 404 whatever the credentials: shape before authority.
+        if route not in ("verify", "snapshot", "holds") and not re.fullmatch(
+                r"holds/[^/]+/(cancel|suspend|resume)", route):
+            return self._error(404, "not_found", f"no circulation route {route!r}")
+
+        # Everything below acts on the account, so it needs credentials that "work".
+        if fields.get("pin") in (None, "", "wrong"):
+            return failure("auth_required", "the stub library refused that PIN")
+
+        holds = HOLDS.setdefault(account["id"], {})
+        if route == "verify":
+            card = str(fields.get("card") or "")
+            return self._json(200, {"status": "ok",
+                                    "library": {"id": "stubville", "name": "Stubville Public Library"},
+                                    "displayName": f"card ending {card[-4:]}" if card else "stub card",
+                                    "pickupLocations": [{"id": "1", "name": "Main Branch"}]})
+        if route == "snapshot":
+            with HOLDS_LOCK:
+                return self._json(200, {"status": "ok", "holds": list(holds.values()), "loans": []})
+        if route == "holds":
+            item = next((i for i in CATALOG if i["id"] == body.get("itemId")), None)
+            if item is None:
+                return failure("not_found", "no such item")
+            if not item["holdable"]:
+                return failure("not_holdable", "the stub cannot place holds on that item")
+            with HOLDS_LOCK:
+                if any(h["itemId"] == item["id"] for h in holds.values()):
+                    return failure("already_held", "already on hold")
+                hold = {"id": f"h-{uuid.uuid4().hex[:8]}", "itemId": item["id"], "title": item["title"],
+                        "authors": item["authors"], "medium": item["medium"], "format": item["format"],
+                        "state": "pending", "queuePosition": 4, "queueSize": 4,
+                        "pickupLocation": {"id": "1", "name": "Main Branch"}}
+                holds[hold["id"]] = hold
+            return self._json(200, {"status": "ok", "hold": hold})
+        match = re.fullmatch(r"holds/([^/]+)/(cancel|suspend|resume)", route)
+        if match:
+            hold_id, operation = match.groups()
+            with HOLDS_LOCK:
+                hold = holds.get(hold_id)
+                if hold is None:
+                    return failure("not_found", "no such hold")
+                if operation == "cancel":
+                    holds.pop(hold_id)
+                    return self._json(200, {"status": "ok"})
+                hold["state"] = "suspended" if operation == "suspend" else "pending"
+                hold["suspendedUntil"] = body.get("until") if operation == "suspend" else None
+            return self._json(200, {"status": "ok", "hold": hold})
+        return self._error(404, "not_found", f"no circulation route {route!r}")
 
     def _ui(self, path: str, query: dict):
         base = self.headers.get("X-Bindery-Base") or "/plugins/stub/ui"

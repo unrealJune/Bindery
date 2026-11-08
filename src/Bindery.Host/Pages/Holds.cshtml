@@ -1,0 +1,145 @@
+@page "/holds"
+@model HoldsModel
+@{
+    ViewData["Title"] = "Holds";
+}
+
+<header class="page-heading">
+    <div>
+        <h1>Holds &amp; loans</h1>
+        <p>Everything on your library cards, kept current in the background. You are emailed when something is ready, before a pickup deadline, and before anything comes due.</p>
+    </div>
+    <div class="heading-actions">
+        <form method="post" asp-page-handler="Sync">
+            <button class="button button-secondary" type="submit"><span>Sync now</span></button>
+        </form>
+        <a class="button button-secondary" asp-page="/LibraryCards"><span>Library cards</span></a>
+        <a class="button button-primary" asp-page="/Borrow"><span>Find a book</span></a>
+    </div>
+</header>
+
+@if (Model.Accounts.Count == 0)
+{
+    <div class="empty-state empty-state-wide">
+        <strong>No library cards connected.</strong>
+        <span><a asp-page="/LibraryCards">Add a library card ›</a> and your holds and loans appear here.</span>
+    </div>
+}
+else
+{
+    @foreach (var account in Model.Accounts.Where(a => a.NeedsAttention || a.LastError is not null))
+    {
+        <p class="notice @(account.NeedsAttention ? "notice-error" : "notice-warn")" role="alert">
+            <strong>@account.LibraryName:</strong> @account.LastError
+            @if (account.NeedsAttention)
+            {
+                <a asp-page="/LibraryCards">Re-enter your PIN ›</a>
+            }
+        </p>
+    }
+
+    <p class="sync-line">
+        @foreach (var account in Model.Accounts)
+        {
+            <span>@account.LibraryName — @(account.LastSyncedAt is { } at ? $"checked {at.ToLocalTime():ddd HH:mm}" : "not yet checked")</span>
+        }
+    </p>
+
+    @if (Model.ActiveCount == 0)
+    {
+        <div class="empty-state">
+            <strong>Nothing on hold or checked out.</strong>
+            <span><a asp-page="/Borrow">Search the catalog ›</a></span>
+        </div>
+    }
+
+    @foreach (var lane in Model.Lanes.Where(lane => lane.Items.Count > 0))
+    {
+        <section class="hold-lane hold-lane-@lane.Key" aria-labelledby="lane-@lane.Key">
+            <div class="section-heading compact">
+                <div>
+                    <h2 id="lane-@lane.Key">@lane.Title</h2>
+                    <p>@lane.Hint</p>
+                </div>
+                <span class="folio">@lane.Items.Count.ToString("00")</span>
+            </div>
+
+            <ul class="hold-list">
+                @foreach (var item in lane.Items)
+                {
+                    var digital = CirculationStateText.IsDigital(item);
+                    <li class="hold-row @(CirculationStateText.IsUrgent(item) ? "is-urgent" : null)" data-state="@item.State">
+                        <div class="catalog-cover">
+                            @if (item.CoverUrl is { } cover && cover.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                            {
+                                <img src="@cover" alt="" loading="lazy" referrerpolicy="no-referrer" />
+                            }
+                        </div>
+                        <div class="hold-body">
+                            <partial name="_MediumBadge" model="new MediumBadgeView(digital, item.Format)" />
+                            <h3 class="catalog-title">
+                                @if (item.Url is not null)
+                                {
+                                    <a href="@item.Url" target="_blank" rel="noopener noreferrer">@item.Title</a>
+                                }
+                                else
+                                {
+                                    @item.Title
+                                }
+                            </h3>
+                            <p class="catalog-meta">@item.Authors</p>
+                            <p class="hold-detail">
+                                <span class="status-mark status-@(item.State is "ready" ? "ready" : item.State is "overdue" ? "failed" : item.State is "in_transit" ? "running" : "queued")" aria-hidden="true"></span>
+                                <strong>@CirculationStateText.Label(item.State)</strong>
+                                <span>@CirculationStateText.Detail(item)</span>
+                            </p>
+                            <p class="hold-library">@item.Account.LibraryName</p>
+                        </div>
+                        <div class="hold-actions">
+                            @foreach (var operation in Model.OperationsFor(item))
+                            {
+                                <form method="post" asp-page-handler="Operate">
+                                    <input type="hidden" name="item" value="@item.Id" />
+                                    <button class="text-action @(operation == "cancel" ? "danger" : null)" type="submit" name="operation" value="@operation">
+                                        @(operation switch { "cancel" => "Cancel hold", "suspend" => "Pause", _ => "Resume" })
+                                    </button>
+                                </form>
+                            }
+                        </div>
+                    </li>
+                }
+            </ul>
+        </section>
+    }
+
+    @if (Model.History.Count > 0)
+    {
+        <section class="hold-lane hold-lane-history" aria-labelledby="lane-history">
+            <div class="section-heading compact">
+                <div>
+                    <h2 id="lane-history">Recently finished</h2>
+                    <p>Picked up, returned, cancelled, or ended.</p>
+                </div>
+            </div>
+            <ul class="hold-list hold-list-history">
+                @foreach (var item in Model.History)
+                {
+                    <li class="hold-row" data-state="@item.State">
+                        <div class="hold-body">
+                            <partial name="_MediumBadge" model="new MediumBadgeView(CirculationStateText.IsDigital(item), null)" />
+                            <h3 class="catalog-title">@item.Title</h3>
+                            <p class="hold-detail">
+                                <strong>@CirculationStateText.Label(item.State)</strong>
+                                <span>@item.StateChangedAt.ToLocalTime().ToString("ddd d MMM") · @item.Account.LibraryName</span>
+                            </p>
+                            @if (item.Events.FirstOrDefault() is { } last)
+                            {
+                                <p class="catalog-meta">@last.Detail</p>
+                            }
+                        </div>
+                    </li>
+                }
+            </ul>
+        </section>
+    }
+}
