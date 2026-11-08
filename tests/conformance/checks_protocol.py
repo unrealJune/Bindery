@@ -148,6 +148,22 @@ def manifest_capabilities(ctx: Ctx) -> None:
         expect_type(value, bool, f"capabilities.{key}")
 
 
+@check("manifest.notify", group="manifest")
+def manifest_notify(ctx: Ctx) -> None:
+    """A notify-capable plugin still works with no notification endpoint advertised.
+
+    The endpoint of §3.7 is served by the *host*, so a plugin-facing suite cannot exercise
+    it. What it can pin down is the half that lives here: this suite never sends
+    `X-Bindery-Notify`, so every other check in this run has already driven the plugin with
+    no endpoint advertised. Reaching this point having declared the capability is the proof
+    that it degrades, which is the requirement that actually breaks deployments — a plugin
+    that needs the header would have failed long before now.
+    """
+    if not ctx.caps.get("notify"):
+        return
+    ctx.note("declares capabilities.notify — verified it serves normally with no endpoint advertised")
+
+
 @check("manifest.formats", group="manifest")
 def manifest_formats(ctx: Ctx) -> None:
     """formats is a list of lowercase, dotless extensions."""
@@ -228,18 +244,25 @@ def manifest_ui(ctx: Ctx) -> None:
     ui = ctx.manifest.get("ui", {})
     expect_type(ui, dict, "ui")
     mode = ui.get("mode", "declarative")
-    expect(mode in {"declarative", "fragment", "iframe"},
-           f"ui.mode must be declarative|fragment|iframe, got {mode!r}")
-    for entry in ui.get("nav", []):
-        expect_type(entry, dict, "ui.nav entry")
-        expect(isinstance(entry.get("label"), str) and entry["label"].strip() != "",
+    expect(mode in {"declarative", "sandboxed", "fragment", "iframe"},
+           f"ui.mode must be declarative|sandboxed|fragment, got {mode!r}")
+    if mode == "iframe":
+        ctx.note("ui.mode 'iframe' is a deprecated alias for 'sandboxed'; prefer 'sandboxed'")
+    if mode == "fragment":
+        ctx.note("ui.mode 'fragment' is deprecated — see docs/PLUGIN-UI.md §7; prefer 'sandboxed'")
+    entry = ui.get("entry", "/")
+    expect(isinstance(entry, str) and entry.startswith("/") and ".." not in entry,
+           f"ui.entry must be a rooted path that does not traverse, got {entry!r}")
+    for nav_entry in ui.get("nav", []):
+        expect_type(nav_entry, dict, "ui.nav entry")
+        expect(isinstance(nav_entry.get("label"), str) and nav_entry["label"].strip() != "",
                "ui.nav entry needs a 'label'")
-        path = entry.get("path")
+        path = nav_entry.get("path")
         expect(isinstance(path, str) and path.startswith("/"),
                f"ui.nav 'path' must start with '/', got {path!r}")
         expect(".." not in path, f"ui.nav 'path' must not traverse: {path!r}")
     if mode == "declarative" and ui.get("nav"):
-        ctx.note("ui.mode is 'declarative' but ui.nav is declared — nav is only meaningful for fragment/iframe")
+        ctx.note("ui.mode is 'declarative' but ui.nav is declared — nav is only meaningful for a UI tier")
 
 
 @check("manifest.stable", group="manifest")

@@ -22,6 +22,7 @@ spec:
       {{- end }}
     spec:
       serviceAccountName: {{ include "bindery.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.serviceAccount.automountToken }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -51,6 +52,13 @@ spec:
                 secretKeyRef:
                   name: {{ . }}
                   key: {{ $.Values.bindery.oidc.clientSecret.key }}
+            {{- end }}
+            {{- with .Values.bindery.notifications.email.passwordSecret.existingSecret }}
+            - name: Bindery__Notifications__Email__Password
+              valueFrom:
+                secretKeyRef:
+                  name: {{ . }}
+                  key: {{ $.Values.bindery.notifications.email.passwordSecret.key }}
             {{- end }}
           volumeMounts:
             - name: data
@@ -130,7 +138,12 @@ spec:
         {{- range $plugin := .Values.plugins }}
         {{- if and $plugin.enabled (eq $plugin.mode "sidecar") }}
         - name: plugin-work-{{ $plugin.name | trunc 50 | trimSuffix "-" }}
+          {{- if (default dict $plugin.persistence).enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "bindery.pluginWorkClaimName" (dict "root" $ "plugin" $plugin) }}
+          {{- else }}
           emptyDir: {}
+          {{- end }}
         - name: plugin-tmp-{{ $plugin.name | trunc 50 | trimSuffix "-" }}
           emptyDir: {}
         {{- end }}

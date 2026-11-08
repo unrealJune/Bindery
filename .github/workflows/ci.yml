@@ -12,11 +12,11 @@ jobs:
   build-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '8.0.x'
-      - uses: azure/setup-helm@v4
+      - uses: azure/setup-helm@v5
       - name: Build
         run: dotnet build Bindery.sln --configuration Release
       - name: Test
@@ -25,8 +25,27 @@ jobs:
         run: helm lint deploy/helm/bindery
       - name: Helm template
         run: helm template bindery deploy/helm/bindery
+      # Hedgerow's chapter parser and store are stdlib-only by design, so they are unit
+      # tested here rather than only through the container. The parser is the piece two
+      # ingest paths have to agree on; a regression there silently duplicates chapters.
+      - name: Hedgerow unit tests
+        run: python -m unittest discover -s tests -t . --verbose
+        working-directory: plugins/hedgerow
+
+      # The BiblioCommons plugin's catalog mapping runs against responses captured from the
+      # live SPL and KCLS gateways, so "is this physical or digital?" is pinned by real data.
+      - name: BiblioCommons unit tests
+        run: python -m unittest discover -s tests -t . --verbose
+        working-directory: plugins/bibliocommons
+
       - name: Plugin conformance self-test
         run: python tests/conformance/run.py --self-test --no-color
+
+      # The stub presents one UI tier per run, and the two tiers are checked for opposite
+      # things — `fragment` for shipping no JavaScript, `sandboxed` for not depending on
+      # egress its CSP removes. Running only one would leave half the UI checks unexercised.
+      - name: Plugin conformance self-test (sandboxed UI tier)
+        run: python tests/conformance/run.py --self-test --stub-ui-mode sandboxed --no-color
 
   # The gate that makes dependency bumps meaningful.
   #
@@ -43,12 +62,12 @@ jobs:
     env:
       BINDERY_PLUGIN_TOKEN: conformance-ci
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
       - name: Build plugin image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: plugins/fanficfare
           file: plugins/fanficfare/Dockerfile
@@ -114,6 +133,167 @@ jobs:
             --base-url http://localhost:8080 \
             --token "$BINDERY_PLUGIN_TOKEN" \
             --no-color $extra
+
+      - name: Plugin logs
+        if: always()
+        run: docker logs plugin || true
+
+      - name: Stop plugin
+        if: always()
+        run: docker rm -f plugin || true
+
+  # The same gate for Hedgerow, which is a separate job rather than a matrix leg because
+  # the two plugins are exercised differently: FanFicFare ships offline test adapters that
+  # make a real end-to-end download cheap, and Hedgerow has no equivalent — its sources are
+  # a live site and a Discord gateway, neither of which belongs in CI.
+  #
+  # What this does prove is the part that is easy to break: that the image builds with
+  # FanFicFare and discord.py resolved, that the plugin starts with **no configuration at
+  # all** (no bot token, no channels), and that its sandboxed UI conforms — including that
+  # it never reaches for fetch/XHR, which the frame's `connect-src 'none'` would block at
+  # runtime in a way no unit test would catch.
+  hedgerow-conformance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      BINDERY_PLUGIN_TOKEN: conformance-ci
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Build plugin image
+        uses: docker/build-push-action@v7
+        with:
+          context: plugins/hedgerow
+          file: plugins/hedgerow/Dockerfile
+          push: false
+          load: true
+          tags: bindery-plugin-hedgerow:ci
+          cache-from: type=gha,scope=hedgerow
+          cache-to: type=gha,scope=hedgerow,mode=max
+
+      # Unlike FanFicFare's, this plugin keeps durable state — ingested chapters, source
+      # attribution, manual ordering — so /work is a real volume rather than a tmpfs of
+      # scratch. A *named* volume specifically: Docker seeds one from the image's own
+      # directory, so this also proves the Dockerfile chowns /work to the unprivileged user
+      # it then switches to. A bare tmpfs would mount root-owned and mask that. In the chart
+      # the equivalent guarantee is podSecurityContext.fsGroup.
+      - name: Start plugin
+        run: |
+          docker volume create hedgerow-work
+          docker run -d --name plugin \
+            -p 8080:8080 \
+            -e BINDERY_PLUGIN_TOKEN="$BINDERY_PLUGIN_TOKEN" \
+            --read-only \
+            --tmpfs /tmp:rw,size=64m \
+            -v hedgerow-work:/work \
+            bindery-plugin-hedgerow:ci
+
+      - name: Wait for health
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:8080/healthz >/dev/null 2>&1; then
+              echo "healthy after ${i}s"; exit 0
+            fi
+            sleep 1
+          done
+          echo "plugin never became healthy"; exit 1
+
+      # discord.py imports `audioop`, which PEP 594 removed in Python 3.13. The image pins
+      # 3.12, so this is the check that catches a base-image bump breaking the bot.
+      - name: Verify dependencies resolve in the image
+        run: |
+          docker exec plugin python -c "import fanficfare; print('fanficfare', fanficfare.__file__)"
+          docker exec plugin python -c "import discord; print('discord.py', discord.__version__)"
+
+      # Starting with no bot token must leave the plugin healthy and Royal-Road-only, never
+      # crash-looping. A plugin that requires configuration to pass a liveness probe cannot
+      # be deployed before it is configured.
+      - name: Verify it starts unconfigured
+        run: |
+          curl -fsS http://localhost:8080/healthz | tee /dev/stderr | grep -q '"status":"ok"'
+
+      - name: Conformance suite
+        run: |
+          python tests/conformance/run.py \
+            --base-url http://localhost:8080 \
+            --token "$BINDERY_PLUGIN_TOKEN" \
+            --no-color
+
+      - name: Plugin logs
+        if: always()
+        run: docker logs plugin || true
+
+      - name: Stop plugin
+        if: always()
+        run: |
+          docker rm -f plugin || true
+          docker volume rm hedgerow-work || true
+
+  # The circulation plugin. It runs with no volume and a read-only root because it keeps no
+  # state, and this proves that posture. The account-bound checks (verify, snapshot, holds)
+  # need a real library card and are not run in CI; the protocol surface, the circulation
+  # manifest, and malformed-request handling all are. Live catalog search is exercised too,
+  # since it needs no credentials — a library's public API changing shape should fail here.
+  bibliocommons-conformance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      BINDERY_PLUGIN_TOKEN: conformance-ci
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Build plugin image
+        uses: docker/build-push-action@v7
+        with:
+          context: plugins/bibliocommons
+          file: plugins/bibliocommons/Dockerfile
+          push: false
+          load: true
+          tags: bindery-plugin-bibliocommons:ci
+          cache-from: type=gha,scope=bibliocommons
+          cache-to: type=gha,scope=bibliocommons,mode=max
+
+      - name: Start plugin
+        run: |
+          docker run -d --name plugin \
+            -p 8080:8080 \
+            -e BINDERY_PLUGIN_TOKEN="$BINDERY_PLUGIN_TOKEN" \
+            --read-only \
+            --tmpfs /tmp:rw,size=16m \
+            bindery-plugin-bibliocommons:ci
+
+      - name: Wait for health
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:8080/healthz >/dev/null 2>&1; then
+              echo "healthy after ${i}s"; exit 0
+            fi
+            sleep 1
+          done
+          echo "plugin never became healthy"; exit 1
+
+      - name: Conformance suite
+        run: |
+          python tests/conformance/run.py \
+            --base-url http://localhost:8080 \
+            --token "$BINDERY_PLUGIN_TOKEN" \
+            --no-color
+
+      # Search needs no credentials, so the card and PIN here are placeholders.
+      - name: Live catalog search (SPL and KCLS)
+        run: |
+          for library in seattle kcls; do
+            python tests/conformance/run.py \
+              --base-url http://localhost:8080 \
+              --token "$BINDERY_PLUGIN_TOKEN" \
+              --only circulation.search \
+              --account library=$library --account card=0 --account pin=unused \
+              --no-color
+          done
 
       - name: Plugin logs
         if: always()

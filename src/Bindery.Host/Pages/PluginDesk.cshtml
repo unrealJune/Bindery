@@ -16,17 +16,45 @@
     <nav class="desk-tabs" aria-label="@Model.Descriptor.DisplayName screens">
         @foreach (var entry in Model.Nav)
         {
-            <a class="@(entry.Href == Model.FragmentUrl ? "is-current" : null)" href="@entry.Href">@entry.Label</a>
+            <a class="@(entry.Path == Model.CurrentPath ? "is-current" : null)" href="@entry.Href">@entry.Label</a>
         }
     </nav>
 }
 
-@* The fragment is fetched rather than inlined so that a slow or wedged plugin delays its
-   own panel and nothing else on the page. *@
-<div class="plugin-surface"
-     hx-get="@Model.FragmentUrl"
-     hx-trigger="load"
-     hx-swap="innerHTML"
-     hx-push-url="false">
-    <p class="plugin-loading">Asking @Model.Descriptor.DisplayName…</p>
-</div>
+@if (Model.IsSandboxed)
+{
+    @*
+        No allow-same-origin, deliberately and permanently: without it the document inside is
+        assigned an opaque origin, which is what lets the plugin ship whatever JavaScript it
+        likes while remaining unable to touch this page, its cookies, or Bindery's API.
+        allow-popups-to-escape-sandbox is likewise absent, so anything the frame opens
+        inherits the same restrictions.
+    *@
+    <div class="plugin-surface plugin-surface-framed">
+        <iframe class="plugin-frame"
+                title="@Model.Descriptor.DisplayName"
+                src="@Model.FragmentUrl"
+                sandbox="allow-scripts allow-forms allow-popups allow-downloads"
+                referrerpolicy="no-referrer"
+                loading="eager"
+                data-plugin-frame
+                data-plugin="@Model.Descriptor.Name"
+                data-base="@Model.BasePath"
+                data-csrf="@Model.CsrfToken"></iframe>
+        <p class="plugin-status" data-plugin-status role="status" aria-live="polite"></p>
+    </div>
+
+    <script src="~/js/plugin-frame.js" asp-append-version="true" defer></script>
+}
+else
+{
+    @* The fragment is fetched rather than inlined so that a slow or wedged plugin delays its
+       own panel and nothing else on the page. *@
+    <div class="plugin-surface"
+         hx-get="@Model.FragmentUrl"
+         hx-trigger="load"
+         hx-swap="innerHTML"
+         hx-push-url="false">
+        <p class="plugin-loading">Asking @Model.Descriptor.DisplayName…</p>
+    </div>
+}

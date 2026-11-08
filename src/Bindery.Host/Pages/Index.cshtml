@@ -49,6 +49,35 @@
                 </button>
             </div>
         </form>
+
+        @*
+            The second way in. A URL goes to a downloader and comes back as a job; a file is
+            already the book, so it is filed synchronously and never touches the queue — which
+            is why this is a second form on the same docket rather than a second page.
+        *@
+        <div class="docket-heading docket-heading-split">
+            <h2 id="upload-title">Deposit a file</h2>
+        </div>
+        <form method="post" asp-page-handler="Upload" class="intake-form" enctype="multipart/form-data" aria-labelledby="upload-title">
+            <label asp-for="Upload">Book file</label>
+            <input asp-for="Upload" class="control control-file" type="file" accept=".epub,.azw3,.mobi,.pdf,.fb2,.cbz,.html,.txt" />
+            <span asp-validation-for="Upload" class="field-error"></span>
+
+            <div class="intake-options intake-options-wide">
+                <div>
+                    <label asp-for="UploadTitle">Title <small>optional</small></label>
+                    <input asp-for="UploadTitle" class="control" placeholder="Read from the file" autocomplete="off" />
+                </div>
+                <div>
+                    <label asp-for="UploadAuthor">Author <small>optional</small></label>
+                    <input asp-for="UploadAuthor" class="control" placeholder="Read from the file" autocomplete="off" />
+                </div>
+                <button class="button button-primary" type="submit">
+                    <span>Deposit</span>
+                    <small>File onto the volume</small>
+                </button>
+            </div>
+        </form>
     </section>
 
     <section class="queue-docket" aria-labelledby="queue-title">
@@ -101,15 +130,7 @@
         <div class="book-register">
             @foreach (var book in Model.RecentBooks)
             {
-                <a class="book-row" asp-page="/Book" asp-route-id="@book.Id">
-                    <span class="book-sequence">@book.Added.ToString("MM.dd")</span>
-                    <span class="book-title">
-                        <strong>@book.Title</strong>
-                        <small>@book.AuthorLine</small>
-                    </span>
-                    <span class="book-meta">@(book.Series.HasValue() ? book.Series.Value.Name : book.Files.Head.Format.ToUpperInvariant())</span>
-                    <span class="row-arrow" aria-hidden="true">›</span>
-                </a>
+                <partial name="_BookRow" model="book" />
             }
         </div>
     }

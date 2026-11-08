@@ -36,6 +36,10 @@ ARTIFACT_TTL_SECONDS = 15 * 60
 SUPPORTED = re.compile(r"^https?://stub\.invalid/works/(\d+)$", re.I)
 UPDATED_AT = "2026-08-01T00:00:00Z"
 
+# Which UI tier to present. The suite's --self-test runs the stub twice, once per tier, so
+# both sets of UI checks are exercised against something known-good.
+UI_MODE = (os.environ.get("BINDERY_STUB_UI_MODE") or "fragment").strip().lower()
+
 MANIFEST = {
     "protocolVersion": 1,
     "name": "stub",
@@ -52,6 +56,7 @@ MANIFEST = {
         "metadata": True,
         "cover": True,
         "cancel": True,
+        "circulation": True,
     },
     "config": [
         {"key": "author_name", "label": "Author to report", "type": "string",
@@ -70,6 +75,18 @@ MANIFEST = {
          "input": [{"key": "q", "label": "Query", "type": "string", "required": True}],
          "output": {"kind": "list", "itemAction": "download"}},
     ],
+    # Protocol 3.8. A fabricated two-item catalog — one physical, one digital — so the suite's
+    # circulation checks have something known-good to run against.
+    "circulation": {
+        "accountFields": [
+            {"key": "library", "label": "Library", "type": "select", "required": True,
+             "options": [{"value": "stubville", "label": "Stubville Public Library"}]},
+            {"key": "card", "label": "Card number", "type": "string", "required": True},
+            {"key": "pin", "label": "PIN", "type": "secret", "required": True},
+        ],
+        "mediums": ["physical", "digital"],
+        "holdOperations": ["cancel", "suspend", "resume"],
+    },
     "ui": {
         "mode": "fragment",
         "nav": [
@@ -82,6 +99,23 @@ MANIFEST = {
 # jobId -> {"created": epoch, "artifacts": {artifactId: {...}}, "cancelled": bool}
 JOBS: dict = {}
 JOBS_LOCK = threading.Lock()
+
+# accountId -> {holdId: hold}. A stub has no library behind it, so its "remote" state is here.
+HOLDS: dict = {}
+HOLDS_LOCK = threading.Lock()
+
+CATALOG = [
+    {"id": "stub-1", "title": "A Physical Stub", "authors": ["Stub, A."], "year": "2026",
+     "url": "https://stub.invalid/record/stub-1", "medium": "physical", "format": "book",
+     "formatLabel": "Book", "provider": None,
+     "availability": {"status": "unavailable", "copies": 2, "availableCopies": 0, "holds": 3},
+     "holdable": True, "borrowUrl": None},
+    {"id": "stub-2", "title": "A Digital Stub", "authors": ["Stub, A."], "year": "2026",
+     "url": "https://stub.invalid/record/stub-2", "medium": "digital", "format": "ebook",
+     "formatLabel": "eBook", "provider": "StubDrive",
+     "availability": {"status": "available", "copies": 1, "availableCopies": 1, "holds": 0},
+     "holdable": False, "borrowUrl": "https://stub.invalid/borrow/stub-2"},
+]
 
 PNG_1PX = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
@@ -197,6 +231,95 @@ UI_ROUTES = {
 }
 
 
+# ---------------------------------------------------------------- sandboxed UI
+#
+# The other tier, in about sixty lines. A sandboxed plugin serves a whole document and may
+# ship its own JavaScript, because the host gives it an opaque origin where that JavaScript
+# has nothing to abuse. Note what the script does *not* do: call fetch. `connect-src 'none'`
+# removes it, so talking to the host means the postMessage bridge — PLUGIN-UI.md §4.
+
+SANDBOXED_APP_JS = """\
+const pending = new Map();
+let seq = 0;
+
+function request(method, path, body) {
+  const id = String(++seq);
+  parent.postMessage({ bindery: 1, type: "request", id, method, path, body }, "*");
+  return new Promise((resolve, reject) => pending.set(id, { resolve, reject }));
+}
+
+window.addEventListener("message", (event) => {
+  const msg = event.data;
+  if (!msg || msg.bindery !== 1) return;
+  if (msg.type === "init") {
+    document.documentElement.setAttribute("data-theme", msg.theme || "auto");
+    document.getElementById("mount").textContent = "bridged to " + msg.plugin;
+    return;
+  }
+  const entry = msg.id && pending.get(msg.id);
+  if (!entry) return;
+  pending.delete(msg.id);
+  msg.type === "response" ? entry.resolve(msg) : entry.reject(new Error(msg.message));
+});
+
+new ResizeObserver(() => {
+  parent.postMessage(
+    { bindery: 1, type: "resize", height: document.documentElement.scrollHeight }, "*");
+}).observe(document.documentElement);
+
+parent.postMessage({ bindery: 1, type: "ready" }, "*");
+"""
+
+
+def sandboxed_document(title: str, body: str) -> str:
+    return (
+        '<!doctype html>\n<html lang="en">\n<head>\n'
+        '<meta charset="utf-8">\n'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
+        f'<title>{html.escape(title)}</title>\n'
+        '<link rel="stylesheet" href="/css/bindery.css">\n'
+        '</head>\n<body>\n'
+        f'{body}\n'
+        '<script src="app.js"></script>\n'
+        '</body>\n</html>\n'
+    )
+
+
+def sandboxed_home(base: str, query: dict) -> str:
+    return sandboxed_document(
+        "Conformance Stub",
+        '<main class="bnd-card"><h1>Conformance Stub</h1>'
+        '<p id="mount">connecting…</p></main>',
+    )
+
+
+def sandboxed_search(base: str, query: dict) -> str:
+    term = (query.get("q", [""])[0] or "").strip()
+    return sandboxed_document(
+        "Stub search",
+        '<main class="bnd-card"><h1>Search</h1>'
+        f"<p>You asked for {html.escape(term) or 'nothing'}.</p>"
+        '<p id="mount">connecting…</p></main>',
+    )
+
+
+SANDBOXED_ROUTES = {
+    "/": sandboxed_home,
+    "": sandboxed_home,
+    "/search": sandboxed_search,
+}
+
+if UI_MODE == "sandboxed":
+    MANIFEST["ui"] = {
+        "mode": "sandboxed",
+        "entry": "/",
+        "nav": [
+            {"label": "Stub", "path": "/", "icon": "book"},
+            {"label": "Stub search", "path": "/search", "icon": "search"},
+        ],
+    }
+
+
 # ---------------------------------------------------------------- HTTP
 
 
@@ -287,6 +410,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._action(unquote(path[len("/bindery/v1/actions/"):]))
         if path.startswith("/bindery/v1/ui"):
             return self._ui(path, parse_qs(parsed.query))
+        if path.startswith("/bindery/v1/circulation/"):
+            return self._circulation(path[len("/bindery/v1/circulation/"):])
         return self._error(404, "not_found", f"no route for POST {path}")
 
     def do_DELETE(self):  # noqa: N802
@@ -449,9 +574,94 @@ class Handler(BaseHTTPRequestHandler):
                            "url": f"https://stub.invalid/works/{i}"} for i in range(1, 4)]}})
         return self._error(404, "not_found", f"no action named {name!r}")
 
+    def _circulation(self, route: str):
+        body = self._body()
+        if body is None:
+            return self._error(400, "internal", "request body is not valid JSON")
+        account = body.get("account")
+        if not isinstance(account, dict) or not isinstance(account.get("id"), str):
+            return self._error(422, "internal", "'account' with an 'id' is required")
+        fields = account.get("fields") or {}
+
+        def failure(code: str, message: str):
+            return self._json(200, {"status": "error",
+                                    "error": {"code": code, "message": message, "retryable": False}})
+
+        if route == "search":
+            medium = body.get("medium") or "any"
+            if medium not in ("any", "physical", "digital"):
+                return self._error(422, "internal", "'medium' must be any|physical|digital")
+            items = [i for i in CATALOG if medium == "any" or i["medium"] == medium]
+            return self._json(200, {"status": "ok", "total": len(items), "page": 1, "pages": 1,
+                                    "items": items})
+
+        # An unknown route is a 404 whatever the credentials: shape before authority.
+        if route not in ("verify", "snapshot", "holds") and not re.fullmatch(
+                r"holds/[^/]+/(cancel|suspend|resume)", route):
+            return self._error(404, "not_found", f"no circulation route {route!r}")
+
+        # Everything below acts on the account, so it needs credentials that "work".
+        if fields.get("pin") in (None, "", "wrong"):
+            return failure("auth_required", "the stub library refused that PIN")
+
+        holds = HOLDS.setdefault(account["id"], {})
+        if route == "verify":
+            card = str(fields.get("card") or "")
+            return self._json(200, {"status": "ok",
+                                    "library": {"id": "stubville", "name": "Stubville Public Library"},
+                                    "displayName": f"card ending {card[-4:]}" if card else "stub card",
+                                    "pickupLocations": [{"id": "1", "name": "Main Branch"}]})
+        if route == "snapshot":
+            with HOLDS_LOCK:
+                return self._json(200, {"status": "ok", "holds": list(holds.values()), "loans": []})
+        if route == "holds":
+            item = next((i for i in CATALOG if i["id"] == body.get("itemId")), None)
+            if item is None:
+                return failure("not_found", "no such item")
+            if not item["holdable"]:
+                return failure("not_holdable", "the stub cannot place holds on that item")
+            with HOLDS_LOCK:
+                if any(h["itemId"] == item["id"] for h in holds.values()):
+                    return failure("already_held", "already on hold")
+                hold = {"id": f"h-{uuid.uuid4().hex[:8]}", "itemId": item["id"], "title": item["title"],
+                        "authors": item["authors"], "medium": item["medium"], "format": item["format"],
+                        "state": "pending", "queuePosition": 4, "queueSize": 4,
+                        "pickupLocation": {"id": "1", "name": "Main Branch"}}
+                holds[hold["id"]] = hold
+            return self._json(200, {"status": "ok", "hold": hold})
+        match = re.fullmatch(r"holds/([^/]+)/(cancel|suspend|resume)", route)
+        if match:
+            hold_id, operation = match.groups()
+            with HOLDS_LOCK:
+                hold = holds.get(hold_id)
+                if hold is None:
+                    return failure("not_found", "no such hold")
+                if operation == "cancel":
+                    holds.pop(hold_id)
+                    return self._json(200, {"status": "ok"})
+                hold["state"] = "suspended" if operation == "suspend" else "pending"
+                hold["suspendedUntil"] = body.get("until") if operation == "suspend" else None
+            return self._json(200, {"status": "ok", "hold": hold})
+        return self._error(404, "not_found", f"no circulation route {route!r}")
+
     def _ui(self, path: str, query: dict):
         base = self.headers.get("X-Bindery-Base") or "/plugins/stub/ui"
         route = path[len("/bindery/v1/ui"):] or "/"
+
+        if UI_MODE == "sandboxed":
+            if route == "/app.js":
+                return self._send(200, SANDBOXED_APP_JS.encode("utf-8"), "text/javascript",
+                                  extra={"Cache-Control": "no-store"})
+            renderer = SANDBOXED_ROUTES.get(route)
+            if renderer is None:
+                return self._send(
+                    404,
+                    sandboxed_document("Not found", '<main class="bnd-card"><p>No such page.</p></main>')
+                    .encode("utf-8"),
+                    "text/html")
+            return self._send(200, renderer(base.rstrip("/"), query).encode("utf-8"), "text/html",
+                              extra={"Cache-Control": "no-store"})
+
         renderer = UI_ROUTES.get(route)
         if renderer is None:
             return self._send(404, b'<div class="bnd-card"><p>No such page.</p></div>', "text/html")
