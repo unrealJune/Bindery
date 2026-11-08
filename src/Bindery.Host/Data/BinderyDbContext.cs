@@ -27,6 +27,16 @@ public class BinderyDbContext(DbContextOptions<BinderyDbContext> options) : DbCo
     public DbSet<FeedTokenEntity> FeedTokens => Set<FeedTokenEntity>();
     public DbSet<ReadProgressEntity> ReadProgress => Set<ReadProgressEntity>();
 
+    public DbSet<CirculationAccountEntity> CirculationAccounts => Set<CirculationAccountEntity>();
+
+    public DbSet<CirculationItemEntity> CirculationItems => Set<CirculationItemEntity>();
+
+    public DbSet<CirculationEventEntity> CirculationEvents => Set<CirculationEventEntity>();
+
+    public DbSet<NotificationEntity> Notifications => Set<NotificationEntity>();
+
+    public DbSet<NotificationPreferenceEntity> NotificationPreferences => Set<NotificationPreferenceEntity>();
+
     /// <summary>
     /// SQLite has no date type, and its provider refuses to order by or compare a
     /// <see cref="DateTimeOffset"/> at all. Storing UTC ticks makes both work, sorts
@@ -146,6 +156,42 @@ public class BinderyDbContext(DbContextOptions<BinderyDbContext> options) : DbCo
                 .OnDelete(DeleteBehavior.Cascade);
         });
 
+        model.Entity<CirculationAccountEntity>(account =>
+        {
+            account.HasIndex(a => a.Owner);
+            account.HasIndex(a => a.LastAttemptAt);
+        });
+
+        model.Entity<CirculationItemEntity>(item =>
+        {
+            // Not unique: a terminal row is history, and a hold id the library reuses
+            // afterwards starts a new row rather than resurrecting the old one.
+            item.HasIndex(i => new { i.AccountId, i.Kind, i.ExternalId });
+            item.HasIndex(i => i.State);
+
+            item.HasOne(i => i.Account)
+                .WithMany(a => a.Items)
+                .HasForeignKey(i => i.AccountId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        model.Entity<CirculationEventEntity>(entry =>
+        {
+            entry.HasIndex(e => new { e.ItemId, e.At });
+
+            entry.HasOne(e => e.Item)
+                .WithMany(i => i.Events)
+                .HasForeignKey(e => e.ItemId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        model.Entity<NotificationEntity>(notification =>
+        {
+            notification.HasIndex(n => new { n.Status, n.NextAttemptAt });
+            notification.HasIndex(n => new { n.Recipient, n.CreatedAt });
+        });
+
+        model.Entity<NotificationPreferenceEntity>(preference => preference.HasKey(p => p.Subject));
     }
 }
 

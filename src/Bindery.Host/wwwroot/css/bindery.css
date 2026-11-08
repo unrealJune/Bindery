@@ -315,9 +315,13 @@ time, data, .folio, .tally, .digest, .pager-position { font-variant-numeric: tab
 /* ---------------------------------------------------------------- signal field */
 
 /*
-    Never a flat background. A dot lattice on a soft vertical tint, breathing slowly, exactly
-    as both source systems draw behind their content. It is inert to the reader: fixed,
-    aria-hidden, pointer-transparent, and frozen entirely under reduced motion.
+    Never a flat background. A dot lattice on a soft vertical tint, as both source systems
+    draw behind their content. It is inert to the reader: fixed, aria-hidden, and
+    pointer-transparent.
+
+    It is deliberately static. A looping animation on a full-viewport layer repaints the whole
+    window every frame for as long as the tab is open (~35% CPU in Chrome, ~50% in Firefox on
+    an idle page), and re-runs every backdrop-filter above it.
 */
 .signal-field {
     position: fixed;
@@ -327,20 +331,14 @@ time, data, .folio, .tally, .digest, .pager-position { font-variant-numeric: tab
     background:
         radial-gradient(circle at center, var(--signal-dot) 1px, transparent 1.6px) 0 0 / var(--signal-step) var(--signal-step),
         linear-gradient(to bottom, var(--void) 0%, var(--page) 42%, var(--page) 100%);
-    animation: signal-breathe 14s ease-in-out infinite;
 }
 
-/* The protection scrim: content never sits directly on the moving field. */
+/* The protection scrim: content never sits directly on the field. */
 .signal-field::after {
     content: "";
     position: absolute;
     inset: 0;
     background: linear-gradient(to bottom, transparent 0%, color-mix(in srgb, var(--page) 55%, transparent) 22%, color-mix(in srgb, var(--page) 86%, transparent) 55%, var(--page) 100%);
-}
-
-@keyframes signal-breathe {
-    0%, 100% { opacity: 0.85; }
-    50% { opacity: 1; }
 }
 
 /* ---------------------------------------------------------------- chrome */
@@ -1969,6 +1967,221 @@ form > label {
 
 /* ---------------------------------------------------------------- responsive */
 
+/* ---------------------------------------------------------------- library circulation */
+
+/*
+    Physical and digital are told apart by an icon, a word, and the badge's edge — solid for
+    a copy on a shelf, dashed for a licence that exists only on a platform. Never by colour
+    alone, and never by a new hue: the system has one, and the distinction is about kind,
+    not about attention.
+*/
+.medium-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s1);
+    max-width: 100%;
+    padding: 2px var(--s3) 2px var(--s2);
+    border: 1px solid var(--accent-line);
+    border-radius: 999px;
+    background: var(--accent-wash);
+    color: var(--accent);
+    font-family: var(--font-mono);
+    font-size: 0.64rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    vertical-align: middle;
+}
+
+.medium-badge svg { width: 13px; height: 13px; flex: none; }
+.medium-badge > span { overflow: hidden; text-overflow: ellipsis; }
+
+.medium-digital {
+    border-style: dashed;
+    border-color: var(--hairline-strong);
+    background: transparent;
+    color: var(--meta);
+}
+
+.borrow-search {
+    display: grid;
+    gap: var(--s6);
+    padding: var(--s7);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius);
+    background: var(--panel);
+    box-shadow: var(--shadow-panel);
+}
+
+/* The medium filter: a segmented control made of real radio buttons. */
+.medium-seg {
+    display: inline-flex;
+    justify-self: start;
+    gap: 2px;
+    margin: 0;
+    padding: 3px;
+    border: 0;
+    border-radius: 999px;
+    background: var(--seg);
+}
+
+.medium-seg label { position: relative; display: block; cursor: pointer; }
+
+.medium-seg input {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    margin: 0;
+    cursor: pointer;
+}
+
+.medium-seg span {
+    display: block;
+    padding: var(--s2) var(--s7);
+    border-radius: 999px;
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 0.95rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--ink-muted);
+}
+
+.medium-seg input:checked + span { background: var(--panel); color: var(--accent); box-shadow: var(--shadow-panel); }
+.medium-seg input:focus-visible + span { outline: 2px solid var(--focus); outline-offset: 2px; }
+.medium-seg label:hover span { color: var(--ink-strong); }
+
+.borrow-search-row { display: flex; flex-wrap: wrap; gap: var(--s4); }
+.borrow-search-row .control-large { flex: 1 1 18rem; }
+.borrow-search-row select.control { flex: 0 1 16rem; }
+
+.medium-legend {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+    gap: var(--s5);
+    margin: 0;
+    padding-top: var(--s5);
+    border-top: 1px solid var(--hairline-soft);
+}
+
+.medium-legend dt { margin-bottom: var(--s2); }
+.medium-legend dd { margin: 0; color: var(--ink-muted); font-size: 0.85rem; line-height: 1.55; }
+
+.borrow-results, .hold-lane { min-width: 0; }
+
+.catalog-list, .hold-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    border-top: 1px solid var(--hairline);
+}
+
+.catalog-row, .hold-row {
+    display: grid;
+    grid-template-columns: 3.4rem minmax(0, 1fr) auto;
+    gap: var(--s6);
+    align-items: center;
+    padding: var(--s6) 0;
+    border-bottom: 1px solid var(--hairline-soft);
+}
+
+.hold-list-history .hold-row { grid-template-columns: minmax(0, 1fr); padding: var(--s5) 0; }
+
+.catalog-cover {
+    width: 3.4rem;
+    aspect-ratio: 2 / 3;
+    border: 1px solid var(--hairline);
+    border-radius: 2px;
+    background: var(--panel-sunk);
+    overflow: hidden;
+}
+
+.catalog-cover img { display: block; width: 100%; height: 100%; object-fit: cover; }
+
+.catalog-body, .hold-body { display: grid; gap: var(--s1); min-width: 0; }
+.catalog-body .medium-badge, .hold-body .medium-badge { justify-self: start; }
+
+.catalog-title {
+    margin: 0;
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 1.12rem;
+    line-height: 1.25;
+    color: var(--ink-strong);
+}
+
+.catalog-title a { color: inherit; text-decoration: none; }
+.catalog-title a:hover { color: var(--accent); text-decoration: underline; }
+.catalog-title small { display: block; font-family: var(--font-sans); font-weight: 400; font-size: 0.82rem; color: var(--ink-muted); }
+
+.catalog-meta, .hold-library { color: var(--ink-muted); font-size: 0.84rem; }
+.hold-library { font-family: var(--font-mono); font-size: 0.68rem; letter-spacing: 0.04em; text-transform: uppercase; }
+
+.catalog-availability { font-family: var(--font-mono); font-size: 0.74rem; color: var(--ink-body); }
+.availability-available { color: var(--ok); }
+
+.catalog-action, .hold-actions { display: flex; flex-direction: column; align-items: flex-end; gap: var(--s2); }
+.hold-form { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--s3); }
+.hold-form select.control { width: auto; max-width: 14rem; }
+.catalog-unholdable { font-family: var(--font-mono); font-size: 0.7rem; color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.06em; }
+
+.heading-actions { display: flex; flex-wrap: wrap; gap: var(--s3); align-items: center; }
+
+.sync-line {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s2) var(--s7);
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.04em;
+    color: var(--ink-muted);
+}
+
+.hold-detail { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); font-size: 0.9rem; color: var(--ink-body); }
+.hold-detail strong { font-family: var(--font-display); font-weight: 600; letter-spacing: 0.03em; color: var(--ink-strong); }
+
+/* A deadline that is close. Amber is attention, which is exactly what this is. */
+.hold-row.is-urgent { box-shadow: inset 3px 0 0 var(--amber); padding-left: var(--s5); background: var(--amber-wash); }
+.hold-row[data-state="overdue"] { box-shadow: inset 3px 0 0 var(--err); background: var(--err-wash); }
+
+.card-docket .plugin-form { margin-top: var(--s5); }
+.card-edit summary { cursor: pointer; color: var(--accent); font-size: 0.9rem; }
+
+.notify-group { margin: var(--s5) 0 0; padding: var(--s5) 0 0; border: 0; border-top: 1px solid var(--hairline-soft); }
+.notify-group legend { padding: 0; font-family: var(--font-display); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--meta); }
+.notify-option { align-items: flex-start; margin-top: var(--s3); }
+.notify-option small { display: block; margin-top: 2px; }
+
+.notify-recent-heading { margin-top: var(--s7); }
+.notify-recent { margin: var(--s4) 0 0; padding: 0; list-style: none; border-top: 1px solid var(--hairline-soft); }
+
+.notify-recent li {
+    display: grid;
+    grid-template-columns: 7rem minmax(0, 1fr) auto;
+    gap: var(--s4);
+    padding: var(--s3) 0;
+    border-bottom: 1px solid var(--hairline-soft);
+    font-size: 0.85rem;
+}
+
+.notify-recent time, .notify-recent em { font-family: var(--font-mono); font-size: 0.7rem; font-style: normal; color: var(--ink-muted); }
+.notify-recent li[data-status="failed"] em { color: var(--err); }
+.notify-recent li[data-status="sent"] em { color: var(--ok); }
+
+@media (max-width: 40rem) {
+    .catalog-row, .hold-row { grid-template-columns: 2.8rem minmax(0, 1fr); }
+    .catalog-cover { width: 2.8rem; }
+    .catalog-action, .hold-actions { grid-column: 1 / -1; align-items: stretch; flex-direction: row; flex-wrap: wrap; }
+    .hold-form { justify-content: stretch; width: 100%; }
+    .hold-form select.control { flex: 1 1 auto; max-width: none; }
+    .medium-seg { justify-self: stretch; }
+    .borrow-search-row > * { flex: 1 1 100%; }
+    .borrow-search-row select.control { flex-basis: 100%; }
+    .medium-seg label { flex: 1 1 0; text-align: center; }
+    .medium-seg span { padding-inline: var(--s3); }
+    .notify-recent li { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+}
+
 @media (max-width: 62rem) {
     :root { --masthead-h: 3.25rem; }
 
@@ -1984,7 +2197,7 @@ form > label {
         bottom: calc(env(safe-area-inset-bottom, 0px) + 0.75rem);
         transform: translateX(-50%);
         z-index: 30;
-        width: min(30rem, calc(100vw - 1.5rem));
+        width: min(36rem, calc(100vw - 1.5rem));
         min-height: 0;
         top: auto;
         flex-direction: row;
@@ -2020,7 +2233,7 @@ form > label {
         color: var(--accent);
     }
 
-    /* Plugin desks are reachable from the Plugins page; the island stays the five core tabs. */
+    /* Plugin desks are reachable from the Plugins page; the island stays the core tabs. */
     .rail-divider,
     .section-rail .rail-extra { display: none; }
 
@@ -2130,8 +2343,6 @@ form > label {
         scroll-behavior: auto !important;
     }
 
-    /* Both source systems freeze their field rather than merely slowing it. */
-    .signal-field { animation: none; opacity: 1; }
     .fd { animation: none; }
     .button:active { transform: none; }
     .book-row:hover .row-arrow { transform: none; }

@@ -44,7 +44,7 @@ public sealed class BookModel(
     /// </summary>
     public async Task<IActionResult> OnPostRefreshAsync(Guid id, CancellationToken cancellationToken)
     {
-        var result = await downloads.EnqueueUpdateAsync(id, User.Identity?.Name, cancellationToken);
+        var result = await downloads.EnqueueUpdateAsync(id, User.Identity?.Name, cancellationToken, Security.Identity.SubjectOf(User));
 
         TempData["Notice"] = result.Accepted
             ? "Update queued. Watch the job ledger."

@@ -203,6 +203,13 @@ public class DownloadJobEntity
     [MaxLength(200)]
     public string? RequestedBy { get; set; }
 
+    /// <summary>
+    /// The stable identity (OIDC subject) of whoever queued this, when a person did.
+    /// <see cref="RequestedBy"/> is a display name; this is who gets told how it ended.
+    /// </summary>
+    [MaxLength(200)]
+    public string? RequesterSubject { get; set; }
+
     public List<JobLogEntity> Log { get; set; } = new();
 }
 
@@ -303,6 +310,235 @@ public class ReadProgressEntity
     /// <summary>The reader's own instance fingerprint, passed through from the client.</summary>
     [MaxLength(200)]
     public string? DeviceId { get; set; }
+
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+/// <summary>
+/// One person's account at a library, connected through a circulation plugin (protocol 3.8).
+/// </summary>
+/// <remarks>
+/// Owned by a person, not the installation: a household has several cards, and a person
+/// can hold cards at two library systems. Every query over this table filters by
+/// <see cref="Owner"/>. Plain field values (library, card number) are stored as JSON; the
+/// secret ones (PIN) are a separate JSON blob encrypted with Data Protection, exactly as
+/// plugin settings are, and are never rendered back.
+/// </remarks>
+public class CirculationAccountEntity
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+
+    /// <summary>OIDC subject of the person this account belongs to.</summary>
+    [MaxLength(200)]
+    public string Owner { get; set; } = string.Empty;
+
+    [MaxLength(64)]
+    public string Plugin { get; set; } = string.Empty;
+
+    /// <summary>What the library calls itself, from the plugin's verify call.</summary>
+    [MaxLength(200)]
+    public string LibraryName { get; set; } = string.Empty;
+
+    /// <summary>A non-secret description, e.g. "card ending 4821".</summary>
+    [MaxLength(200)]
+    public string? DisplayName { get; set; }
+
+    /// <summary>Non-secret account field values, as a JSON object of strings.</summary>
+    public string FieldsJson { get; set; } = "{}";
+
+    /// <summary>Secret account field values, as a JSON object, Data-Protection encrypted.</summary>
+    public string ProtectedSecrets { get; set; } = string.Empty;
+
+    /// <summary>Pickup branches from the last verify, as a JSON array of {id, name}.</summary>
+    public string PickupLocationsJson { get; set; } = "[]";
+
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+
+    /// <summary>When a snapshot last reconciled successfully. Null until the first one.</summary>
+    public DateTimeOffset? LastSyncedAt { get; set; }
+
+    /// <summary>When a sync was last attempted, successful or not.</summary>
+    public DateTimeOffset? LastAttemptAt { get; set; }
+
+    [MaxLength(500)]
+    public string? LastError { get; set; }
+
+    /// <summary>
+    /// The library refused the credentials. Syncing stops until they are re-entered, so a
+    /// wrong PIN does not get a card locked by repeated attempts.
+    /// </summary>
+    public bool NeedsAttention { get; set; }
+
+    public List<CirculationItemEntity> Items { get; set; } = new();
+}
+
+/// <summary>A hold or a loan on a circulation account, and where it is in its lifecycle.</summary>
+/// <remarks>
+/// A cache of the library's own records plus the conclusions Bindery drew from them
+/// (docs/CIRCULATION.md §3). Deleting every row loses history and nothing else: the next sync
+/// rebuilds every active hold and loan.
+/// </remarks>
+public class CirculationItemEntity
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+
+    public Guid AccountId { get; set; }
+
+    public CirculationAccountEntity Account { get; set; } = null!;
+
+    /// <summary>"hold" or "loan" — <c>Circulation.TrackedKind.Wire</c>.</summary>
+    [MaxLength(8)]
+    public string Kind { get; set; } = "hold";
+
+    /// <summary>The library's id for this hold or loan.</summary>
+    [MaxLength(200)]
+    public string ExternalId { get; set; } = string.Empty;
+
+    /// <summary>The catalog id; links a hold to the loan it became.</summary>
+    [MaxLength(200)]
+    public string? CatalogId { get; set; }
+
+    /// <summary><c>Circulation.TrackedState.Wire</c>.</summary>
+    [MaxLength(24)]
+    public string State { get; set; } = "pending";
+
+    [MaxLength(500)]
+    public string Title { get; set; } = string.Empty;
+
+    [MaxLength(500)]
+    public string? Authors { get; set; }
+
+    /// <summary>"physical" or "digital".</summary>
+    [MaxLength(16)]
+    public string Medium { get; set; } = "physical";
+
+    [MaxLength(32)]
+    public string? Format { get; set; }
+
+    [MaxLength(2000)]
+    public string? CoverUrl { get; set; }
+
+    [MaxLength(2000)]
+    public string? Url { get; set; }
+
+    public int? QueuePosition { get; set; }
+
+    public int? QueueSize { get; set; }
+
+    [MaxLength(200)]
+    public string? PickupLocation { get; set; }
+
+    public DateTimeOffset? ReadyUntil { get; set; }
+
+    public DateTimeOffset? SuspendedUntil { get; set; }
+
+    public DateTimeOffset? DueAt { get; set; }
+
+    public DateTimeOffset? PlacedAt { get; set; }
+
+    /// <summary>The deadline a reminder was last sent for; see <c>Circulation.Tracked</c>.</summary>
+    public DateTimeOffset? RemindedFor { get; set; }
+
+    public DateTimeOffset FirstSeenAt { get; set; } = DateTimeOffset.UtcNow;
+
+    public DateTimeOffset LastSeenAt { get; set; } = DateTimeOffset.UtcNow;
+
+    public DateTimeOffset StateChangedAt { get; set; } = DateTimeOffset.UtcNow;
+
+    public List<CirculationEventEntity> Events { get; set; } = new();
+}
+
+/// <summary>Something that happened to a hold or loan, as Bindery concluded it.</summary>
+public class CirculationEventEntity
+{
+    public long Id { get; set; }
+
+    public Guid ItemId { get; set; }
+
+    public CirculationItemEntity Item { get; set; } = null!;
+
+    public DateTimeOffset At { get; set; } = DateTimeOffset.UtcNow;
+
+    /// <summary><c>Circulation.Event.Wire</c>, e.g. "ready".</summary>
+    [MaxLength(32)]
+    public string Kind { get; set; } = string.Empty;
+
+    [MaxLength(24)]
+    public string? FromState { get; set; }
+
+    [MaxLength(24)]
+    public string ToState { get; set; } = string.Empty;
+
+    /// <summary>One line of plain text, from <c>Circulation.describe</c>.</summary>
+    [MaxLength(500)]
+    public string Detail { get; set; } = string.Empty;
+}
+
+public enum NotificationStatus
+{
+    Pending,
+    Sent,
+    /// <summary>Gave up after the configured number of attempts.</summary>
+    Failed,
+    /// <summary>Not sent on purpose: no address, muted, or delivery switched off.</summary>
+    Suppressed
+}
+
+/// <summary>
+/// One message to one person, in the outbox. Written by whoever has something to say and
+/// drained by <c>NotificationWorker</c>, so nothing on a request path or inside a sync ever
+/// waits on a mail server.
+/// </summary>
+public class NotificationEntity
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+
+    /// <summary>OIDC subject of the recipient.</summary>
+    [MaxLength(200)]
+    public string Recipient { get; set; } = string.Empty;
+
+    /// <summary>One of <c>NotificationCategories</c>, e.g. "hold-ready".</summary>
+    [MaxLength(32)]
+    public string Category { get; set; } = string.Empty;
+
+    /// <summary>What raised it, for the log: "circulation:bibliocommons", "downloads".</summary>
+    [MaxLength(100)]
+    public string Source { get; set; } = string.Empty;
+
+    [MaxLength(300)]
+    public string Subject { get; set; } = string.Empty;
+
+    /// <summary>Plain text. Rendered as text by every channel; never as HTML.</summary>
+    public string Body { get; set; } = string.Empty;
+
+    public NotificationStatus Status { get; set; } = NotificationStatus.Pending;
+
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+
+    public DateTimeOffset? SentAt { get; set; }
+
+    public int Attempts { get; set; }
+
+    public DateTimeOffset? NextAttemptAt { get; set; }
+
+    [MaxLength(500)]
+    public string? LastError { get; set; }
+}
+
+/// <summary>How one person wants to be told things.</summary>
+public class NotificationPreferenceEntity
+{
+    [MaxLength(200)]
+    public string Subject { get; set; } = string.Empty;
+
+    [MaxLength(320)]
+    public string? Email { get; set; }
+
+    public bool EmailEnabled { get; set; } = true;
+
+    /// <summary>Comma-separated category keys the person has switched off.</summary>
+    [MaxLength(500)]
+    public string MutedCategories { get; set; } = string.Empty;
 
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 }

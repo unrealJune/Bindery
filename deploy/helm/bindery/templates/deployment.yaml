@@ -53,6 +53,13 @@ spec:
                   name: {{ . }}
                   key: {{ $.Values.bindery.oidc.clientSecret.key }}
             {{- end }}
+            {{- with .Values.bindery.notifications.email.passwordSecret.existingSecret }}
+            - name: Bindery__Notifications__Email__Password
+              valueFrom:
+                secretKeyRef:
+                  name: {{ . }}
+                  key: {{ $.Values.bindery.notifications.email.passwordSecret.key }}
+            {{- end }}
           volumeMounts:
             - name: data
               mountPath: /data

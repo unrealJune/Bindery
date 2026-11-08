@@ -93,6 +93,25 @@ updates:
     # FanFicFare and discord.py are both left ungrouped: this plugin's two sources break
     # independently, and each deserves its own reviewable PR against the conformance run.
 
+  - package-ecosystem: pip
+    directory: /plugins/bibliocommons
+    schedule:
+      interval: weekly
+      day: monday
+    labels:
+      - dependencies
+      - plugin/bibliocommons
+    commit-message:
+      prefix: 'plugin(bibliocommons)'
+    groups:
+      plugin-server:
+        patterns:
+          - fastapi
+          - uvicorn*
+        update-types:
+          - minor
+          - patch
+
   # ---------------------------------------------------------------- images
 
   - package-ecosystem: docker
@@ -136,6 +155,17 @@ updates:
       # not a PR to wave through.
       - dependency-name: python
         update-types: ['version-update:semver-major', 'version-update:semver-minor']
+
+  - package-ecosystem: docker
+    directory: /plugins/bibliocommons
+    schedule:
+      interval: weekly
+      day: monday
+    labels:
+      - dependencies
+      - plugin/bibliocommons
+    commit-message:
+      prefix: 'plugin(bibliocommons)'
 
   # ---------------------------------------------------------------- CI
 

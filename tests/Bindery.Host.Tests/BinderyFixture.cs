@@ -26,6 +26,9 @@ public sealed class BinderyFixture : IAsyncLifetime
 
     public string LibraryPath => Path.Combine(_root, "library");
 
+    /// <summary>Where the email channel drops .eml files instead of connecting to a server.</summary>
+    public string MailPath => Path.Combine(_root, "mail");
+
     public IServiceProvider Services => _factory!.Services;
 
     public async Task InitializeAsync()
@@ -46,7 +49,14 @@ public sealed class BinderyFixture : IAsyncLifetime
             ["Bindery:Plugins:Token"] = "test-token",
             ["Bindery:Plugins:Registry:0:Name"] = Plugin.Name,
             ["Bindery:Plugins:Registry:0:Enabled"] = "true",
-            ["Bindery:Plugins:Registry:0:BaseUrl"] = Plugin.BaseUrl
+            ["Bindery:Plugins:Registry:0:BaseUrl"] = Plugin.BaseUrl,
+            // Real mail, written as .eml files and sent nowhere.
+            ["Bindery:Notifications:Email:Enabled"] = "true",
+            ["Bindery:Notifications:Email:From"] = "Bindery <bindery@stub.invalid>",
+            ["Bindery:Notifications:Email:PickupDirectory"] = MailPath,
+            // Tests drive syncs and deliveries themselves; background loops would race them.
+            ["Bindery:Circulation:SyncEnabled"] = "false",
+            ["Bindery:Notifications:PollInterval"] = "01:00:00"
         };
 
         _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(host =>

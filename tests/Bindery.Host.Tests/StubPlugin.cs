@@ -47,6 +47,25 @@ public sealed class StubPlugin : IAsyncDisposable
     /// <summary>Set to have every download fail with a retryable error.</summary>
     public bool FailDownloads { get; set; }
 
+    // ------------------------------------------------------------ circulation (protocol 3.8)
+
+    /// <summary>The PIN the stub library accepts. Anything else is auth_required.</summary>
+    public const string GoodPin = "2468";
+
+    /// <summary>
+    /// What the stub library says each card currently has, keyed by card number. Tests edit
+    /// these between syncs to walk a hold through its lifecycle.
+    /// </summary>
+    public Dictionary<string, List<object>> CardHolds { get; } = new(StringComparer.Ordinal);
+
+    public Dictionary<string, List<object>> CardLoans { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>Set to make snapshots fail the way a half-loaded account page would.</summary>
+    public bool FailSnapshots { get; set; }
+
+    /// <summary>Hold operations the stub has been asked to perform, as "holdId:operation".</summary>
+    public List<string> HoldOperations { get; } = [];
+
     /// <summary>The fragment the UI endpoint returns. Tests set hostile markup here.</summary>
     public string Fragment { get; set; } =
         """<div class="bnd-card"><h2>Stub</h2><button class="bnd-btn" hx-get="/plugins/stub/ui/more">More</button></div>""";
@@ -147,6 +166,8 @@ public sealed class StubPlugin : IAsyncDisposable
                 _ => Results.NotFound()
             };
         });
+
+        app.MapPost("/bindery/v1/circulation/{**route}", (string route, HttpContext context) => plugin!.CirculationAsync(route, context));
 
         app.Map("/bindery/v1/ui/{**rest}", (HttpContext context, string? rest) =>
         {
@@ -275,6 +296,97 @@ public sealed class StubPlugin : IAsyncDisposable
         });
     }
 
+    private async Task<IResult> CirculationAsync(string route, HttpContext context)
+    {
+        var body = await ReadJsonAsync(context);
+        var fields = body?["account"]?["fields"] as JsonObject;
+
+        if (fields is null)
+        {
+            return Results.Json(new { error = new { code = "internal", message = "'account' is required" } }, statusCode: 422);
+        }
+
+        var card = fields["card"]?.GetValue<string>() ?? string.Empty;
+        var pin = fields["pin"]?.GetValue<string>();
+
+        IResult Refuse(string code, string message) =>
+            Results.Json(new { status = "error", error = new { code, message, retryable = false } });
+
+        if (route == "search")
+        {
+            var medium = body?["medium"]?.GetValue<string>() ?? "any";
+            var items = new object[]
+            {
+                new { id = "bib-1", title = "A Shelf Copy", authors = new[] { "Stub, A." }, medium = "physical",
+                      format = "book", formatLabel = "Book", holdable = true,
+                      availability = new { status = "unavailable", copies = 3, availableCopies = 0, holds = 5 } },
+                new { id = "bib-2", title = "A Licence", authors = new[] { "Stub, A." }, medium = "digital",
+                      format = "ebook", formatLabel = "eBook", provider = "StubDrive", holdable = false,
+                      borrowUrl = "https://stub.invalid/borrow/bib-2",
+                      availability = new { status = "available", copies = 1, availableCopies = 1, holds = 0 } }
+            }.Where(item => medium == "any" || ((dynamic)item).medium == medium).ToArray();
+
+            return Results.Json(new { status = "ok", total = items.Length, page = 1, pages = 1, items });
+        }
+
+        if (pin != GoodPin)
+        {
+            return Refuse("auth_required", "the stub library refused that PIN");
+        }
+
+        lock (_gate)
+        {
+            var holds = CardHolds.TryGetValue(card, out var h) ? h : CardHolds[card] = [];
+            var loans = CardLoans.TryGetValue(card, out var l) ? l : CardLoans[card] = [];
+
+            switch (route)
+            {
+                case "verify":
+                    return Results.Json(new
+                    {
+                        status = "ok",
+                        library = new { id = "stubville", name = "Stubville Public Library" },
+                        displayName = $"card ending {card[^4..]}",
+                        pickupLocations = new[] { new { id = "1", name = "Main Branch" }, new { id = "2", name = "Harbour Branch" } }
+                    });
+
+                case "snapshot" when FailSnapshots:
+                    return Refuse("network", "the account page did not finish loading");
+
+                case "snapshot":
+                    return Results.Json(new { status = "ok", holds, loans });
+
+                case "holds":
+                    var itemId = body?["itemId"]?.GetValue<string>();
+
+                    if (itemId != "bib-1")
+                    {
+                        return Refuse("not_holdable", "only bib-1 can be held");
+                    }
+
+                    holds.Add(new { id = $"hold-{holds.Count + 1}", itemId, title = "A Shelf Copy", medium = "physical", state = "pending", queuePosition = 5, queueSize = 5 });
+                    return Results.Json(new { status = "ok" });
+
+                default:
+                    var parts = route.Split('/');
+
+                    if (parts is ["holds", var holdId, var operation and ("cancel" or "suspend" or "resume")])
+                    {
+                        HoldOperations.Add($"{holdId}:{operation}");
+
+                        if (operation == "cancel")
+                        {
+                            holds.RemoveAll(hold => ((dynamic)hold).id == holdId);
+                        }
+
+                        return Results.Json(new { status = "ok" });
+                    }
+
+                    return Results.NotFound();
+            }
+        }
+    }
+
     private static async Task<JsonObject?> ReadJsonAsync(HttpContext context)
     {
         using var reader = new StreamReader(context.Request.Body);
@@ -336,7 +448,14 @@ public sealed class StubPlugin : IAsyncDisposable
             "priority": -100,
             "matches": ["^https?://stub\\.invalid/works/\\d+$"],
             "formats": ["epub"],
-            "capabilities": { "probe": true, "update": true, "metadata": true, "cover": true, "cancel": true },
+            "capabilities": { "probe": true, "update": true, "metadata": true, "cover": true, "cancel": true, "circulation": true },
+            "circulation": {
+              "accountFields": [
+                { "key": "card", "label": "Card number", "type": "string", "required": true },
+                { "key": "pin", "label": "PIN", "type": "secret", "required": true }
+              ],
+              "holdOperations": ["cancel", "suspend", "resume"]
+            },
             "config": [
               { "key": "author_name", "label": "Author to report", "type": "string" },
               { "key": "api_key", "label": "Pretend API key", "type": "secret" }
