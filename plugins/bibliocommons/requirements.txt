@@ -1,0 +1,5 @@
+# Deliberately short. Everything that talks to a library is the standard library (urllib +
+# http.cookiejar, see app/web.py), so the parsers are testable with no dependencies at all and
+# this image never needs a browser engine or a scraping framework.
+fastapi==0.141.1
+uvicorn[standard]==0.52.4
