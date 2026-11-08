@@ -30,7 +30,7 @@ the same library through token-authenticated OPDS feeds.
 
 ## Capabilities and Constraints
 
-- ASP.NET Core 8 host, F# serialization core, Razor Pages with htmx, and SQLite via EF Core.
+- ASP.NET Core 10 host, F# serialization core, Razor Pages with htmx, and SQLite via EF Core.
 - Plugins are discovered from configuration and communicate only through the versioned HTTP
   protocol.
 - Library files are the source of truth; SQLite is a rebuildable index.

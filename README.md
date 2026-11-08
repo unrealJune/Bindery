@@ -112,7 +112,7 @@ prove a plugin works standalone.
 
 ## Stack
 
-ASP.NET Core 8 (C#) for the host, F# for the core domain and OPDS serialization, Razor Pages
+ASP.NET Core 10 (C#) for the host, F# for the core domain and OPDS serialization, Razor Pages
 + htmx for the UI, SQLite via EF Core for the index. No Node build step. The files on disk
 are the source of truth; the database is a rebuildable index.
 
@@ -163,8 +163,13 @@ Running the host straight from the checkout, without containers:
 Bindery__Auth__Mode=None dotnet run --project src/Bindery.Host
 ```
 
-Requires the .NET 8 SDK; the repo targets `net8.0` deliberately, so it builds in more
-places than the newest SDK is installed.
+Requires a stable .NET 10 SDK; the repo targets the supported `net10.0` LTS line.
+`global.json` keeps local builds on .NET 10, matching CI and the Docker images.
+
+Dependabot updates allowed by `.github/dependabot.yml` are automatically squash-merged
+after all four required CI checks pass: `build-test`, `plugin-conformance`,
+`hedgerow-conformance`, and `bibliocommons-conformance`. Keep these checks required in
+the `main` branch protection rule; enabling auto-merge alone does not gate merges on CI.
 
 See [`CLAUDE.md`](CLAUDE.md) for conventions and the constraints that are easy to violate
 by accident, and [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for how the pieces fit.

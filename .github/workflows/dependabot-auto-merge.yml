@@ -1,0 +1,25 @@
+name: Dependabot auto-merge
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    if: >-
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    steps:
+      # Metadata only: never check out or execute the pull request's code here.
+      - name: Enable auto-merge after required CI checks pass
+        run: gh pr merge "$PR_URL" --auto --squash --match-head-commit "$HEAD_SHA"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
