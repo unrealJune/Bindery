@@ -1,6 +1,6 @@
 """Account parsing and sign-in, against a fake browser.
 
-Unlike ``test_catalog.py``, these shapes are **reconstructed**, not captured — no library
+Unlike ``test_catalog.py``, most of these shapes are **reconstructed**, not captured — no library
 credentials were used to build this plugin (see the docstring of ``app/account.py``). What
 these tests pin down is the plugin's *behaviour* around those shapes: that a partial account
 is never reported as complete, that unknown statuses are reported conservatively, that a
@@ -188,6 +188,61 @@ class SignIn(unittest.TestCase):
             sessions.get("acct", SPL, "1000", "2222")
 
         self.assertEqual(["1111", "2222"], made)
+
+    def test_both_login_requests_ask_for_html(self):
+        # With the client's default Accept (JSON first) the site answers with a JSON modal
+        # fragment whose markup is escaped and has no form token. Verified against live Seattle.
+        def post(method, url, kwargs):
+            browser.cookies["bc_access_token"] = "tkn"
+            return page('<script>window.__STATE__={"accountId":987654}</script>')
+        browser = FakeBrowser([("/user/login", ("GET", page(LOGIN_PAGE))), ("/user/login", ("POST", post))])
+
+        with mock.patch.object(account, "Browser", return_value=browser):
+            account.login(SPL, "1000012345678", "1234", "f")
+
+        for _, _, kwargs in browser.calls:
+            self.assertEqual("text/html", kwargs["headers"]["Accept"])
+
+    def test_the_account_id_is_the_users_account_not_the_user_id(self):
+        # Live Seattle: the user id and the account id are different numbers, and the gateway
+        # answers 500 if given the user id. The legacy dashboard carries "user":{"id":...} only;
+        # the /v2/ pages embed the state that lists the user's accounts.
+        dashboard = '<script>var c={"user":{"id":111111,"name":"x"}};</script>'
+        v2 = ('<script>{"auth":{"currentUserId":111111},"entities":{"users":{"111111":{"staff":false,'
+              '"accounts":[222222],"loggedIn":true}},"accounts":{"222222":{"id":222222}}}}</script>')
+
+        def post(method, url, kwargs):
+            browser.cookies["bc_access_token"] = "tkn"
+            return page(dashboard)
+        browser = FakeBrowser([("/user/login", ("GET", page(LOGIN_PAGE))), ("/user/login", ("POST", post)),
+                               ("/v2/holds", page(v2))])
+
+        with mock.patch.object(account, "Browser", return_value=browser):
+            session = account.login(SPL, "1000012345678", "1234", "f")
+
+        self.assertEqual("222222", session.account_id)
+
+    def test_no_account_anywhere_is_a_parse_error(self):
+        def post(method, url, kwargs):
+            browser.cookies["bc_access_token"] = "tkn"
+            return page("<p>dashboard</p>")
+        browser = FakeBrowser([("/user/login", ("GET", page(LOGIN_PAGE))), ("/user/login", ("POST", post)),
+                               ("/v2/holds", page("<p>nothing</p>"))])
+        with mock.patch.object(account, "Browser", return_value=browser):
+            with self.assertRaises(SiteError) as caught:
+                account.login(SPL, "1000012345678", "1234", "f")
+        self.assertEqual("parse", caught.exception.code)
+
+
+class FormToken(unittest.TestCase):
+    def test_attribute_order_and_quote_style_do_not_matter(self):
+        for markup in ('<input name="authenticity_token" type="hidden" value="a+b/c=" />',
+                       "<input type='hidden' value='a+b/c=' name='authenticity_token'>"):
+            self.assertEqual("a+b/c=", account.find_token(markup))
+
+    def test_the_json_fragment_the_site_sends_for_a_json_accept_has_no_token(self):
+        fragment = json.dumps({"html": '<input name="authenticity_token" value="x">'})
+        self.assertIsNone(account.find_token(fragment))
 
 
 class Holds(unittest.TestCase):
