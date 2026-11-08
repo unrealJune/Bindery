@@ -170,6 +170,8 @@ Dependabot updates allowed by `.github/dependabot.yml` are automatically squash-
 after all four required CI checks pass: `build-test`, `plugin-conformance`,
 `hedgerow-conformance`, and `bibliocommons-conformance`. Keep these checks required in
 the `main` branch protection rule; enabling auto-merge alone does not gate merges on CI.
+After a tested Dependabot head merges, automation dispatches main's CI and image
+publication workflows explicitly, since bot-token merges do not trigger push workflows.
 
 See [`CLAUDE.md`](CLAUDE.md) for conventions and the constraints that are easy to violate
 by accident, and [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for how the pieces fit.

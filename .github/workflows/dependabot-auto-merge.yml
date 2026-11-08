@@ -3,6 +3,10 @@ name: Dependabot auto-merge
 on:
   pull_request_target:
     types: [opened, reopened, synchronize, ready_for_review]
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: ['dependabot/**']
 
 permissions:
   contents: write
@@ -11,6 +15,7 @@ permissions:
 jobs:
   auto-merge:
     if: >-
+      github.event_name == 'pull_request_target' &&
       github.event.pull_request.user.login == 'dependabot[bot]' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       !github.event.pull_request.draft
@@ -23,3 +28,38 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PR_URL: ${{ github.event.pull_request.html_url }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+
+  post-merge:
+    if: >-
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: write
+    steps:
+      # GITHUB_TOKEN merges suppress push workflows; explicit dispatches do not.
+      # Verify the tested head really merged, then run only trusted main-branch code.
+      - name: Dispatch main workflows after the tested Dependabot PR merges
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          for i in $(seq 1 60); do
+            merged=$(gh api "repos/$GH_REPO/commits/$HEAD_SHA/pulls" |
+              jq --arg sha "$HEAD_SHA" --arg repo "$GH_REPO" \
+                '[.[] | select(.user.login == "dependabot[bot]" and
+                  .head.sha == $sha and .head.repo.full_name == $repo and
+                  .base.ref == "main" and .merged_at != null)] | length')
+            if [ "$merged" -gt 0 ]; then
+              gh workflow run ci.yml --repo "$GH_REPO" --ref main
+              gh workflow run images.yml --repo "$GH_REPO" --ref main
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Tested Dependabot head did not merge; no main workflows dispatched."
