@@ -2,10 +2,10 @@ version: 2
 
 # Two rules shape everything below.
 #
-# 1. The host is pinned to net8.0 on purpose (see CLAUDE.md — it builds in more places
-#    that way), so nothing is allowed to propose a major bump that drags it to net9+.
+# 1. The host is pinned to net10.0, the supported LTS line (see CLAUDE.md), so nothing
+#    is allowed to propose a major bump that drags it to net11+.
 #    That means the .NET base images and the framework-versioned packages are
-#    major-locked here; moving off net8.0 is a deliberate decision, not a PR to merge.
+#    major-locked here; moving off net10.0 is a deliberate decision, not a PR to merge.
 #
 # 2. The FanFicFare plugin image is where churn is *supposed* to happen. Fanfic sites
 #    break, upstream ships fixes, and absorbing that without touching Bindery is the
@@ -36,7 +36,7 @@ updates:
           - Microsoft.NET.Test.Sdk
     ignore:
       # Framework-versioned: these track the TargetFramework, not their own roadmap.
-      # A major here is a net8.0 -> net9.0 migration wearing a disguise.
+      # A major here is a framework migration wearing a disguise.
       - dependency-name: Microsoft.AspNetCore.*
         update-types: ['version-update:semver-major']
       - dependency-name: Microsoft.EntityFrameworkCore.*
@@ -124,7 +124,7 @@ updates:
       - docker
     ignore:
       # Bindery's runtime is `aspnet` with no interpreter in it and must stay on the
-      # 8.0 line alongside TargetFramework.
+      # 10.0 line alongside TargetFramework.
       - dependency-name: mcr.microsoft.com/dotnet/*
         update-types: ['version-update:semver-major']
 

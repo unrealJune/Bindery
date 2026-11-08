@@ -8,7 +8,7 @@ Read `PLAN.md` for the architecture and roadmap. This file is about *how to work
 ## What this is
 
 Bindery serves an OPDS catalog and acquires books through downloader plugins.
-ASP.NET Core 8 host (C#), F# core library, Razor Pages + htmx UI, SQLite via EF Core.
+ASP.NET Core 10 host (C#), F# core library, Razor Pages + htmx UI, SQLite via EF Core.
 
 ---
 
@@ -166,8 +166,8 @@ Everything that was true of this tier is still true, in roughly the order it bre
   hosts. `NuGet.offline.config` (gitignored) points at the SDK's bundled
   `FSharp/library-packs` so framework-only projects still build. Anything with a
   `PackageReference` will not restore there — build those in CI.
-- The Ubuntu-packaged SDK is 8.0.x; the repo targets `net8.0` deliberately so it builds
-  in more places.
+- The repo targets `net10.0`, the supported LTS line. `global.json` selects a stable
+  .NET 10 SDK; CI, Docker images, and framework-versioned packages must stay aligned.
 - Docker may be unavailable (no daemon) in agent sandboxes. Validate Dockerfiles by
   inspection and let CI build them.
 

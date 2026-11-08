@@ -2,10 +2,10 @@
 #
 # Bindery is the host only. Downloader stacks live in plugin images, never here.
 
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS restore
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS restore
 WORKDIR /src
 
-COPY NuGet.config Directory.Build.props ./
+COPY NuGet.config Directory.Build.props global.json ./
 COPY src/Bindery.Core/Bindery.Core.fsproj src/Bindery.Core/
 COPY src/Bindery.Host/Bindery.Host.csproj src/Bindery.Host/
 RUN dotnet restore src/Bindery.Host/Bindery.Host.csproj
