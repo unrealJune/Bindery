@@ -9,7 +9,13 @@ no credentials were used while writing it. What *is* verified:
 - that ``GET {gateway}/holds?accountId=…`` and ``GET {gateway}/checkouts?accountId=…`` exist
   and answer ``401 invalid_token`` without a session.
 
-What is *reconstructed* from how the BiblioCommons web app behaves, and isolated here so it
+Verified end to end against a live Seattle Public Library account (Nov 2026): sign-in, the
+account id (``STATE_ACCOUNT_RE``: it is *not* the user id), the opaque ``bc_access_token`` /
+``session_id`` cookies accepted as ``X-Access-Token`` / ``X-Session-Id``, and the holds and
+checkouts listings. Not yet exercised live: loans (the test account had none) and the
+place / cancel / suspend writes.
+
+What is still *reconstructed* from how the BiblioCommons web app behaves, and isolated here so it
 can be corrected in one place against a real account:
 
 - the session is carried by the ``bc_access_token`` and ``session_id`` cookies, which the
@@ -48,8 +54,22 @@ SESSION_TTL = 20 * 60
 PAGE_SIZE = 50
 MAX_PAGES = 20
 
-TOKEN_RE = re.compile(r'name="authenticity_token"[^>]*value="([^"]+)"')
+# Attribute order and quoting vary; match the whole <input> and pull the value out of it.
+TOKEN_INPUT_RE = re.compile(r'<input\b[^>]*\bname=["\']authenticity_token["\'][^>]*>')
+TOKEN_VALUE_RE = re.compile(r'\bvalue=["\']([^"\']+)["\']')
+HTML_HEADERS = {"Accept": "text/html"}
+
+
+def find_token(page: str) -> Optional[str]:
+    tag = TOKEN_INPUT_RE.search(page)
+    value = TOKEN_VALUE_RE.search(tag.group(0)) if tag else None
+    return value.group(1) if value else None
 ACCOUNT_ID_RE = re.compile(r'"accountId"\s*:\s*"?(\d+)"?')
+# Verified against live Seattle pages: the user id and the *account* id are different numbers,
+# and the gateway answers 500 if given the user id. The /v2/ pages embed the redux state, in
+# which the signed-in user lists its accounts: ``"users":{"<uid>":{...,"accounts":[<account>]``.
+# Access-token cookies are opaque (not JWTs), so there is no claim to read it from.
+STATE_ACCOUNT_RE = re.compile(r'"users"\s*:\s*\{\s*"\d+"\s*:\s*\{[^}]*?"accounts"\s*:\s*\[\s*(\d+)')
 
 # BiblioCommons hold statuses → protocol hold states.
 HOLD_STATES = {
@@ -132,18 +152,20 @@ def login(library: Library, card: str, pin: str, fingerprint: str) -> Session:
     browser = Browser()
     url = f"{library.catalog}/user/login?destination=%2Fuser_dashboard"
 
-    page = browser.request("GET", url)
-    token = TOKEN_RE.search(page.text)
+    # Ask for HTML explicitly: with the client's default Accept (JSON first) the site answers
+    # with a JSON modal fragment whose markup is escaped and carries no form token.
+    page = browser.request("GET", url, headers=HTML_HEADERS)
+    token = find_token(page.text)
     if not token:
         raise SiteError("parse", "the library's sign-in page has changed; no form token was found")
 
     reply = browser.request("POST", url, form={
         "utf8": "✓",
-        "authenticity_token": token.group(1),
+        "authenticity_token": token,
         "name": card,
         "user_pin": pin,
         "local": "false",
-    }, ok=(200,))
+    }, headers=HTML_HEADERS, ok=(200,))
 
     # A failed sign-in renders the form again; a successful one lands on the dashboard and
     # sets a session cookie. Either signal alone is accepted as success, both absent is not.
@@ -153,6 +175,10 @@ def login(library: Library, card: str, pin: str, fingerprint: str) -> Session:
 
     account_id = _account_id(browser, reply.text)
     if not account_id:
+        # The legacy dashboard carries no account; the /v2/ pages embed the state that does.
+        state = browser.request("GET", f"{library.catalog}/v2/holds", headers=HTML_HEADERS)
+        account_id = _account_id(browser, state.text)
+    if not account_id:
         raise SiteError("parse", "signed in, but could not find the account id on the dashboard")
 
     log.info("signed in to %s", library.slug)  # never the card number
@@ -160,7 +186,7 @@ def login(library: Library, card: str, pin: str, fingerprint: str) -> Session:
 
 
 def _account_id(browser: Browser, dashboard: str) -> Optional[str]:
-    match = ACCOUNT_ID_RE.search(dashboard)
+    match = ACCOUNT_ID_RE.search(dashboard) or STATE_ACCOUNT_RE.search(dashboard)
     if match:
         return match.group(1)
     token = browser.cookie("bc_access_token")
