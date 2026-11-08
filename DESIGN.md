@@ -276,7 +276,7 @@ Verified: no horizontal overflow at 1440×960 or 390×844 in either theme.
 
 This system is **not flat, and not lifted**. Depth comes from three sources in strict order: the hairline (which is the edge), tonal layering between `--void` / `--page` / `--panel` / `--panel-sunk`, and a single diffuse ambient shadow that never changes with state. Panels sit *under* the page colour rather than above it; a shadow is atmosphere, not a rank.
 
-The background is **never flat**. `.signal-field` is a fixed, `aria-hidden`, pointer-transparent dot lattice — `radial-gradient` dots on a `--signal-step` 22px grid over a vertical `--void → --page` tint — breathing between 0.85 and 1 opacity on a 14s cycle. A `::after` scrim of `color-mix` page colour ensures content never sits directly on the moving field.
+The background is **never flat**. `.signal-field` is a fixed, `aria-hidden`, pointer-transparent dot lattice — `radial-gradient` dots on a `--signal-step` 22px grid over a vertical `--void → --page` tint — held static. A `::after` scrim of `color-mix` page colour ensures content never sits directly on the field. Do not animate it: a looping animation on a full-viewport layer repaints the whole window every frame, and re-runs every `backdrop-filter` above it.
 
 ### Shadow Vocabulary
 - **Panel ambient** `--shadow-panel` (`light-dark(0 12px 28px rgba(40, 60, 80, 0.1), 0 12px 28px rgba(0, 7, 12, 0.4))`): dockets, stations, plates, the gate. Constant at rest and on hover.
@@ -357,7 +357,7 @@ The last section of `bindery.css` is API. `docs/PLUGIN-UI.md` rule 3 promises pl
 - **Do** keep hover to colour + border + ground, transitioned over `--dur-hover` (200ms) with `--ease` (`cubic-bezier(0.16, 1, 0.3, 1)`) — the system's only entrance curve.
 - **Do** draw navigation and control icons as inline 24-viewBox SVG at `stroke-width: 1.6`, `fill: none`, in `currentColor` — and use `›` / `‹` / `·` for row affordances, pager direction, and metadata separation, `aria-hidden` in every case.
 - **Do** give real elements their semantics: `<progress>` for progress, `<time>`/`<data>` for values, `role="img"` + `aria-label` for a board.
-- **Do** freeze motion under `prefers-reduced-motion: reduce` — the block sets `animation: none` on both `.signal-field` and every `.fd`, not merely a shorter duration.
+- **Do** freeze motion under `prefers-reduced-motion: reduce` — the block sets `animation: none` on every `.fd`, not merely a shorter duration.
 - **Do** hold WCAG AA on both themes, composited against the actual ancestor ground (alpha washes included). This is verified on every route today.
 - **Do** treat `--bnd-*` names as a versioned contract with plugins.
 

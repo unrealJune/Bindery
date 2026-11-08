@@ -148,6 +148,22 @@ def manifest_capabilities(ctx: Ctx) -> None:
         expect_type(value, bool, f"capabilities.{key}")
 
 
+@check("manifest.notify", group="manifest")
+def manifest_notify(ctx: Ctx) -> None:
+    """A notify-capable plugin still works with no notification endpoint advertised.
+
+    The endpoint of §3.7 is served by the *host*, so a plugin-facing suite cannot exercise
+    it. What it can pin down is the half that lives here: this suite never sends
+    `X-Bindery-Notify`, so every other check in this run has already driven the plugin with
+    no endpoint advertised. Reaching this point having declared the capability is the proof
+    that it degrades, which is the requirement that actually breaks deployments — a plugin
+    that needs the header would have failed long before now.
+    """
+    if not ctx.caps.get("notify"):
+        return
+    ctx.note("declares capabilities.notify — verified it serves normally with no endpoint advertised")
+
+
 @check("manifest.formats", group="manifest")
 def manifest_formats(ctx: Ctx) -> None:
     """formats is a list of lowercase, dotless extensions."""

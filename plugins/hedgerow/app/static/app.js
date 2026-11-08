@@ -69,6 +69,37 @@
 
   function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
 
+  /* Deleting takes two clicks on one button rather than a dialog. confirm() blocks the whole
+     frame, and a sandboxed document that wedges takes the postMessage bridge down with it —
+     so the button states what it is about to do, and forgets again if left alone. */
+  function dangerButton(label, confirmLabel, onConfirm) {
+    var button = el("button", "hg-btn hg-btn-danger", label);
+    var armed = false;
+    var timer = null;
+
+    function disarm() {
+      armed = false;
+      button.textContent = label;
+      button.classList.remove("armed");
+      if (timer) { clearTimeout(timer); timer = null; }
+    }
+
+    button.addEventListener("click", function () {
+      if (!armed) {
+        armed = true;
+        button.textContent = confirmLabel;
+        button.classList.add("armed");
+        timer = setTimeout(disarm, 5000);
+        return;
+      }
+      disarm();
+      onConfirm();
+    });
+
+    button.addEventListener("blur", disarm);
+    return button;
+  }
+
   var app = document.getElementById("app");
   var selectedWork = null;
 
@@ -250,25 +281,57 @@
       if (!works.length) {
         wcard.appendChild(el("p", "hg-muted", "No works yet."));
       } else {
-        works.forEach(function (w) {
-          var dl = el("dl", "hg-defn");
-          addDef(dl, "Title", w.title || "Untitled");
-          addDef(dl, "Chapters", String(w.chapters));
-          if (w.source_url) addDef(dl, "Royal Road", w.source_url);
-          wcard.appendChild(dl);
-        });
+        works.forEach(function (w) { wcard.appendChild(workEntry(w)); });
       }
       app.appendChild(wcard);
 
-      if (bindings.length) {
-        var bcard = el("div", "hg-card");
-        bcard.appendChild(el("h2", null, "Channel bindings"));
-        bindings.forEach(function (b) {
-          bcard.appendChild(el("p", "hg-muted", "Channel " + b.channel_id + " \u2192 " + (b.title || ("work " + b.work_id))));
-        });
-        app.appendChild(bcard);
+      var bcard = el("div", "hg-card");
+      bcard.appendChild(el("h2", null, "Channel bindings"));
+      if (!bindings.length) {
+        bcard.appendChild(el("p", "hg-muted", "No channel is bound to a work yet."));
+      } else {
+        bindings.forEach(function (b) { bcard.appendChild(bindingEntry(b)); });
       }
+      app.appendChild(bcard);
     });
+  }
+
+  function workEntry(w) {
+    var entry = el("div", "hg-entry");
+    var dl = el("dl", "hg-defn");
+    addDef(dl, "Title", w.title || "Untitled");
+    addDef(dl, "Chapters", String(w.chapters));
+    if (w.source_url) addDef(dl, "Royal Road", w.source_url);
+    if (w.hedgerow_url) addDef(dl, "Hedgerow", w.hedgerow_url);
+    entry.appendChild(dl);
+
+    entry.appendChild(dangerButton("Forget work", "Delete " + w.chapters + " chapter(s)?", function () {
+      request("POST", "/api/work/delete", { work: w.id }).then(function () {
+        // Only what Hedgerow tracks. A book already filed in Bindery stays filed, and
+        // saying so here saves someone going to look for it.
+        notify("info", "Forgot " + (w.title || ("work " + w.id))
+          + ". Books already filed in the library are untouched.");
+        if (selectedWork === w.id) selectedWork = null;
+        renderSources();
+      });
+    }));
+
+    return entry;
+  }
+
+  function bindingEntry(b) {
+    var entry = el("div", "hg-entry");
+    entry.appendChild(el("p", "hg-muted",
+      "Channel " + b.channel_id + " \u2192 " + (b.title || ("work " + b.work_id))));
+
+    entry.appendChild(dangerButton("Unbind channel", "Stop watching?", function () {
+      request("POST", "/api/binding/delete", { channel: b.channel_id }).then(function () {
+        notify("info", "Channel " + b.channel_id + " unbound. Chapters it already supplied stay.");
+        renderSources();
+      });
+    }));
+
+    return entry;
   }
 
   function addDef(dl, term, value) {

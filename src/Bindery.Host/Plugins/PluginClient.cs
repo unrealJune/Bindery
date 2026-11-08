@@ -4,6 +4,7 @@ using System.Text;
 using Bindery.Core;
 using Bindery.Host.Configuration;
 using Microsoft.Extensions.Options;
+using CirculationCore = Bindery.Core.Circulation;
 
 namespace Bindery.Host.Plugins;
 
@@ -25,6 +26,7 @@ public sealed record FetchedArtifact(string TempPath, long SizeBytes, string Sha
 public sealed class PluginClient(
     IHttpClientFactory factory,
     IOptions<BinderyOptions> options,
+    PluginNotifyTokens notifyTokens,
     ILogger<PluginClient> logger)
 {
     public const string RequestClient = "bindery-plugin";
@@ -34,6 +36,7 @@ public sealed class PluginClient(
     private const int MaxNdjsonLineBytes = 64 * 1024;
 
     private readonly PluginHostOptions _options = options.Value.Plugins;
+    private readonly UpdateOptions _updates = options.Value.Updates;
 
     // ------------------------------------------------------------ manifest
 
@@ -364,6 +367,95 @@ public sealed class PluginClient(
         return outcome;
     }
 
+    // ------------------------------------------------------------ circulation (protocol 3.8)
+
+    private const int MaxCirculationBytes = 2 * 1024 * 1024;
+
+    public Task<CirculationCore.Reply<CirculationCore.Verified>> VerifyAccountAsync(
+        PluginEntry entry, CirculationCore.Account account, CancellationToken cancellationToken) =>
+        CirculationAsync(entry, "verify", CirculationCore.Request.verify(account), CirculationCore.Parse.verify, cancellationToken);
+
+    public Task<CirculationCore.Reply<CirculationCore.SearchPage>> SearchCatalogAsync(
+        PluginEntry entry,
+        CirculationCore.Account account,
+        string query,
+        Protocol.Medium? medium,
+        int page,
+        CancellationToken cancellationToken) =>
+        CirculationAsync(
+            entry,
+            "search",
+            CirculationCore.Request.search(
+                account,
+                query,
+                medium is null ? Microsoft.FSharp.Core.FSharpOption<Protocol.Medium>.None : medium.ToOption(),
+                page),
+            CirculationCore.Parse.search,
+            cancellationToken);
+
+    public Task<CirculationCore.Reply<CirculationCore.Snapshot>> SnapshotAsync(
+        PluginEntry entry, CirculationCore.Account account, CancellationToken cancellationToken) =>
+        CirculationAsync(entry, "snapshot", CirculationCore.Request.snapshot(account), CirculationCore.Parse.snapshot, cancellationToken);
+
+    public Task<CirculationCore.Reply<Microsoft.FSharp.Core.FSharpOption<CirculationCore.ObservedHold>>> PlaceHoldAsync(
+        PluginEntry entry,
+        CirculationCore.Account account,
+        string itemId,
+        string? pickupLocationId,
+        CancellationToken cancellationToken) =>
+        CirculationAsync(
+            entry,
+            "holds",
+            CirculationCore.Request.placeHold(account, itemId, pickupLocationId.ToOption()),
+            CirculationCore.Parse.holdChange,
+            cancellationToken);
+
+    public Task<CirculationCore.Reply<Microsoft.FSharp.Core.FSharpOption<CirculationCore.ObservedHold>>> HoldOperationAsync(
+        PluginEntry entry,
+        CirculationCore.Account account,
+        string holdId,
+        Protocol.HoldOperation operation,
+        DateTimeOffset? until,
+        CancellationToken cancellationToken) =>
+        CirculationAsync(
+            entry,
+            $"holds/{Uri.EscapeDataString(holdId)}/{operation.Wire}",
+            CirculationCore.Request.holdOperation(account, until.ToValueOption()),
+            CirculationCore.Parse.holdChange,
+            cancellationToken);
+
+    /// <summary>
+    /// One circulation call. The request body carries an account's credentials, which is why
+    /// every circulation endpoint is a POST and why nothing here logs a body in either
+    /// direction.
+    /// </summary>
+    private async Task<T> CirculationAsync<T>(
+        PluginEntry entry,
+        string route,
+        string payload,
+        Func<string, Microsoft.FSharp.Core.FSharpResult<T, string>> parse,
+        CancellationToken cancellationToken)
+    {
+        using var client = CreateClient(entry, RequestClient);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(_options.ActionTimeout);
+
+        var body = await ReadBoundedStringAsync(
+            client,
+            HttpMethod.Post,
+            $"/bindery/v1/circulation/{route}",
+            new StringContent(payload, Encoding.UTF8, "application/json"),
+            MaxCirculationBytes,
+            timeout.Token);
+
+        if (!parse(body).TryGet(out var reply, out var error))
+        {
+            throw new PluginTransportException($"plugin '{entry.Name}' sent an unusable {route} response: {error}");
+        }
+
+        return reply;
+    }
+
     // ------------------------------------------------------------ plumbing
 
     public HttpClient CreateClient(PluginEntry entry, string clientName)
@@ -382,6 +474,19 @@ public sealed class PluginClient(
         if (!string.IsNullOrEmpty(token))
         {
             client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        }
+
+        // Protocol 3.7. Advertised on every request rather than handed over once, because a
+        // plugin holds no durable relationship with a particular host process: a restart
+        // mints a new token, and the next request is what tells the plugin about it. Both
+        // headers are omitted when the scheduler is off, which is how a plugin learns the
+        // host accepts no notifications.
+        if (_updates.Enabled && !string.IsNullOrWhiteSpace(_updates.NotifyUrl))
+        {
+            client.DefaultRequestHeaders.Remove("X-Bindery-Notify");
+            client.DefaultRequestHeaders.Remove("X-Bindery-Notify-Token");
+            client.DefaultRequestHeaders.Add("X-Bindery-Notify", _updates.NotifyUrl);
+            client.DefaultRequestHeaders.Add("X-Bindery-Notify-Token", notifyTokens.For(entry.Name));
         }
 
         return client;

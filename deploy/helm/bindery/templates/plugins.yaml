@@ -26,6 +26,7 @@ spec:
         bindery.github.io/plugin: {{ $plugin.name | quote }}
     spec:
       serviceAccountName: {{ include "bindery.serviceAccountName" $ }}
+      automountServiceAccountToken: {{ $.Values.serviceAccount.automountToken }}
       {{- with $.Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}

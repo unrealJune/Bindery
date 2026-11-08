@@ -1,13 +1,17 @@
 using Bindery.Host.Catalog;
+using Bindery.Host.Circulation;
 using Bindery.Host.Configuration;
 using Bindery.Host.Data;
 using Bindery.Host.Downloads;
 using Bindery.Host.Endpoints;
 using Bindery.Host.Library;
+using Bindery.Host.Notifications;
 using Bindery.Host.Opds;
 using Bindery.Host.Plugins;
 using Bindery.Host.Security;
+using Bindery.Host.Ui;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 
@@ -51,6 +55,7 @@ builder.Services.AddHttpClient(PluginClient.StreamClient, http =>
     http.DefaultRequestHeaders.UserAgent.ParseAdd($"Bindery/{ThisAssembly.Version}");
 });
 
+builder.Services.AddSingleton<PluginNotifyTokens>();
 builder.Services.AddSingleton<PluginClient>();
 builder.Services.AddSingleton<PluginRegistry>();
 builder.Services.AddSingleton<PluginResolver>();
@@ -64,10 +69,26 @@ builder.Services.AddScoped<PluginActionService>();
 builder.Services.AddSingleton<LibraryStore>();
 builder.Services.AddSingleton<DownloadQueue>();
 builder.Services.AddScoped<CatalogService>();
+builder.Services.AddScoped<ReadProgressService>();
 builder.Services.AddScoped<DownloadService>();
 builder.Services.AddScoped<DownloadRunner>();
+builder.Services.AddScoped<BookIndexer>();
 builder.Services.AddScoped<LibraryScanner>();
+builder.Services.AddScoped<LibraryWriter>();
 builder.Services.AddHostedService<DownloadWorker>();
+builder.Services.AddHostedService<UpdateScheduler>();
+
+// ---------------------------------------------------------------- circulation and notifications
+
+builder.Services.AddScoped<CirculationAccountStore>();
+builder.Services.AddScoped<CirculationService>();
+builder.Services.AddHostedService<CirculationSyncWorker>();
+
+builder.Services.AddScoped<NotificationService>();
+builder.Services.AddSingleton<INotificationChannel, EmailChannel>();
+// A singleton as well as a hosted service, so the outbox can be drained on demand.
+builder.Services.AddSingleton<NotificationWorker>();
+builder.Services.AddHostedService(services => services.GetRequiredService<NotificationWorker>());
 
 // ---------------------------------------------------------------- web
 
@@ -75,6 +96,7 @@ builder.Services.AddBinderyAuth(options);
 builder.Services.AddScoped<FeedTokenService>();
 builder.Services.AddSingleton<FragmentSanitizer>();
 builder.Services.AddScoped<PluginUiProxy>();
+builder.Services.AddSingleton<SourceLabels>();
 
 builder.Services.AddRazorPages(razor =>
 {
@@ -94,6 +116,15 @@ builder.Services.AddAntiforgery(antiforgery =>
 });
 
 builder.Services.AddResponseCompression();
+
+// An EPUB is bigger than Kestrel's 30 MB default allows once it carries art, and a limit
+// the server enforces below the configured one would only fail uploads confusingly.
+builder.WebHost.ConfigureKestrel(kestrel => kestrel.Limits.MaxRequestBodySize = options.Uploads.MaxBytes);
+builder.Services.Configure<FormOptions>(form =>
+{
+    form.MultipartBodyLengthLimit = options.Uploads.MaxBytes;
+    form.MultipartHeadersLengthLimit = 32 * 1024;
+});
 
 builder.Services.Configure<ForwardedHeadersOptions>(forwarded =>
 {
@@ -125,6 +156,7 @@ app.UseAuthorization();
 app.MapRazorPages();
 app.MapOpds();
 app.MapApi();
+app.MapPluginNotify();
 app.MapPluginUi();
 
 app.MapGet("/healthz", () => Results.Json(new { status = "ok", version = ThisAssembly.Version }))

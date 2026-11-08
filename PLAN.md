@@ -300,15 +300,40 @@ running Bindery at all.
 
 ## 10. Explicitly out of scope for v1
 
-Update scheduler (re-fetch for new chapters) · watch folder / bulk import · read-progress
-sync · multi-user libraries · calibre-style metadata editing · full-text search ·
-plugin marketplace or registry.
+Watch folder / bulk import · read-progress sync · multi-user libraries · calibre-style
+metadata editing · full-text search · plugin marketplace or registry.
 
-The update scheduler is the strongest candidate for v1.1 — for ongoing fanfic it is
-arguably the point — but it needs per-book source tracking to be solid first, and that's
-what phase 3 builds.
+Depositing *one* file through the UI is in — it is the same filing path a download ends in,
+minus the plugin — and so is withdrawing a book. What stays out is the unattended half: a
+watched directory, a bulk import, and editing a filed book's metadata after the fact.
 
----
+**The update scheduler has since shipped.** It was the strongest candidate for v1.1 — for
+ongoing fanfic it is arguably the point — and it was waiting on per-book source tracking,
+which phase 3 delivered. `Downloads/UpdateScheduler.cs` now sweeps books whose most recent
+job has aged past `Bindery:Updates:Interval` and queues the same update the book page's
+manual refresh does. "Last checked" is derived from the Jobs table, so it needed no schema.
+
+Polling alone cannot see a source that moves out of band — a chat bot handed a file, say —
+so protocol §3.7 lets a plugin POST a contentless hint and have Bindery decide whether to
+queue early. The schedule remains the backstop: every notification could be dropped and
+books would still converge, just later. That is what keeps the one host-served endpoint an
+optimization rather than a correctness dependency.
+
+**Read-progress sync has since shipped**, via the OPDS Plus KOReader plugin fork rather
+than a Bindery-native feature: the host gained `/opds/syncs/progress` PUT/GET under the
+catalog policy (kosync-shaped bodies, per-feed-token isolation in a `ReadProgress` table —
+migration `20261014185256_AddReadProgress`), and the fork's reader pushes/pulls from the
+reading view. The host stays sync-agnostic: it stores positions keyed by (book, feed token)
+and answers GETs; everything kosync knows about devices, debouncing, and direction
+strategies lives in the client.
+
+**Library circulation has since shipped** (protocol §3.8, `docs/CIRCULATION.md`). A plugin
+may declare `capabilities.circulation` and serve search, holds, and a per-account snapshot;
+the host owns per-person accounts (secrets encrypted), the hold/loan lifecycle as a pure F#
+reconcile function, and a notification subsystem with an outbox and an SMTP channel that
+downloads use too. The reference consumer is `plugins/bibliocommons` (Seattle Public Library,
+KCLS). This is the first per-person data in Bindery; the book library itself stays shared.
+Migration `AddCirculationAndNotifications` is additive and touches no book table.
 
 ## 11. Known risks
 

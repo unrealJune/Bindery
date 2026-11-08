@@ -31,6 +31,7 @@ _TAG = re.compile(r"<[^>]+>")
 _BODY = re.compile(r"<body[^>]*>(.*)</body>", re.I | re.S)
 _TITLE_TAG = re.compile(r"<title[^>]*>(.*?)</title>", re.I | re.S)
 _HEADING = re.compile(r"<h[1-3][^>]*>(.*?)</h[1-3]>", re.I | re.S)
+_URL = re.compile(r"^https?://", re.I)
 
 
 @dataclass
@@ -92,6 +93,42 @@ def build_epub(out_path: str, *, title: str, author: str, chapters: List[ParsedC
         book.writestr("OEBPS/nav.xhtml", nav)
         for filename, document in docs:
             book.writestr(f"OEBPS/{filename}", document)
+
+
+def read_source_url(epub_path: str) -> Optional[str]:
+    """A story URL the EPUB names about itself, or None.
+
+    Used to associate a forwarded advance copy with a work nobody has bound by hand. Only an
+    explicit claim counts: `dc:source`, or a `dc:identifier` that is itself a URL — both are
+    the file saying where it came from. A title is *not* an identity and is never guessed
+    from, because two serials sharing a title would silently merge into one book, which is
+    far worse than the file being ignored.
+
+    Returns None for anything unrecognised, which is the caller's signal to leave the EPUB
+    alone rather than invent a work for it.
+    """
+    try:
+        with zipfile.ZipFile(epub_path) as book:
+            opf_path = _opf_path(book, set(book.namelist()))
+            if not opf_path:
+                return None
+            root = ElementTree.parse(io.BytesIO(book.read(opf_path))).getroot()
+            candidates = []
+            for element in root.iter():
+                tag = element.tag.rsplit("}", 1)[-1]
+                if tag in ("source", "identifier") and (element.text or "").strip():
+                    candidates.append((tag, element.text.strip()))
+    except (zipfile.BadZipFile, ElementTree.ParseError, KeyError, OSError) as exc:
+        log.debug("could not read metadata from %s: %s", epub_path, exc)
+        return None
+
+    # dc:source first: it means "where this came from". A dc:identifier is only a URL by
+    # coincidence — often it is a UUID or an ISBN — so it is the fallback, not the lead.
+    for wanted in ("source", "identifier"):
+        for tag, value in candidates:
+            if tag == wanted and _URL.match(value):
+                return value
+    return None
 
 
 # ---------------------------------------------------------------- reading internals

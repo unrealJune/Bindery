@@ -79,15 +79,30 @@ With no token, the bot stays dormant and the plugin still works for Royal Road.
 ## Reconciliation rules
 
 - **Binding.** A Royal Road fiction URL posted in a watched channel sets that channel's
-  *current work*. EPUB attachments posted afterward attach to it.
+  *current work*. EPUB attachments posted afterward attach to it. The URL is normalized the
+  same way the download path normalizes it, so a bare `http://royalroad.com/fiction/123`
+  and the canonical form are one work, not two.
+- **Binding without a URL.** If an EPUB arrives in a channel with nothing bound, and the
+  file *names its own source* — `dc:source`, or a `dc:identifier` that is a URL — the work
+  is created and bound from that, no posted URL needed. A file that claims nothing is still
+  ignored: a title is not an identity, and two serials sharing one would merge silently.
 - **Forwarded messages.** Both `message.attachments` and every
   `message_snapshots[*].attachments` are checked — forwarded advance copies live only in the
   snapshots.
 - **Expiring CDN URLs.** Discord attachment URLs are signed and expire (~24h). Bytes are
   read on receipt and stored locally; a CDN URL is never persisted.
-- **Ordering.** Each chapter's `arc.part` (e.g. `Zodiacal Light – 6.1`) or bare number
-  (`7`) is parsed and sorted numerically, falling back to Royal Road publish date, then the
-  Discord message timestamp.
+- **Ordering.** Each chapter's `arc.part` is read from its title and sorted numerically,
+  falling back to Royal Road publish date, then the Discord message timestamp. Labelled
+  numbers win over unlabelled ones and a major label always supplies the arc, so
+  `Maidens of the Fall, Arc 6, Zodiacal Light, Chapter 3` is **6.3** — not 3, which taking
+  the last number in the title would give. `Zodiacal Light – 6.1`, `Chapter 7`, `Arc VI,
+  Chapter 3`, and a bare `7` all still read correctly; `plugins/hedgerow/tests` pins the
+  cases down.
+- **Changing the parser is a migration.** `chapter_key` is derived from the parsed number, so
+  a smarter parser moves keys that are already stored. `merge.KEY_VERSION` and
+  `Store.reindex_chapters` rewrite them once at boot — without that, the next scrape would
+  match nothing and re-ingest the whole back catalogue as duplicates. Bump the version with
+  any parsing change.
 - **Precedence: first-seen wins.** Whichever source supplies a chapter first owns it; the
   same chapter later supplied by the other source is dropped, not merged over. This is
   enforced by a `UNIQUE(work_id, chapter_key)` clause in the store.
@@ -108,12 +123,28 @@ With no token, the bot stays dormant and the plugin still works for Royal Road.
 `unchanged` is deliberately never claimed on an update: a forwarded EPUB can add chapters
 even when the Royal Road side has not moved, so every run rebuilds the merged book.
 
+## Telling Bindery something arrived
+
+Discord delivers chapters whenever the author posts, which no polling interval can predict.
+So after ingesting, the plugin POSTs a contentless hint to Bindery (protocol §3.7) naming
+the source that moved; Bindery decides whether to queue an update. The endpoint and its
+token are read from the `X-Bindery-Notify*` headers on requests Bindery makes and persisted,
+because the bot is not serving a request when a file arrives.
+
+It is debounced — a forwarded batch is one call — and entirely best-effort. Bindery's own
+update schedule is the backstop, so a hint that never lands costs latency, never
+correctness. That is why nothing here retries.
+
 ## The actions
 
 - **`pending`** — works that have ingested chapters but have not been downloaded into the
   library yet, each with a Download button.
 - **`rescan`** — re-fetch a work from Royal Road and reconcile immediately, without waiting
   for the host's update schedule.
+- **`forget`** — stop tracking a work: its ingested chapters and any channel bound to it are
+  deleted. A book already filed in Bindery's library is **not** touched — the library is the
+  host's, and a plugin reaching into it would be exactly the coupling the protocol prevents.
+  Deleting the filed book is done from Bindery's own book page.
 
 ## The UI
 
@@ -130,7 +161,9 @@ Two screens:
   reordering via the native HTML5 drag-and-drop API, and per-chapter number pinning. A *Clear
   overrides* button drops back to automatic ordering.
 - **Sources** — the Discord bot's connection state, the channels it watches, the known
-  works, and the channel→work bindings.
+  works, and the channel→work bindings. Each work can be forgotten and each binding
+  unbound from here; both are armed by a first click and performed by a second, because a
+  blocking `confirm()` inside the frame would take the postMessage bridge down with it.
 
 Even inside the sandbox, everything user-supplied is escaped before it reaches markup —
 defense in depth, and the conformance suite checks reflection.

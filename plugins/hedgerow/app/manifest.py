@@ -6,7 +6,7 @@ Hedgerow serves exactly one serial, from Royal Road and its hungryshedgerow.net 
 
 from __future__ import annotations
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 
 # Royal Road fiction and chapter pages, and the author's own mirror. Anchored, www optional,
 # and the domain must be followed by a path/query boundary so 'royalroad.com.evil' cannot match.
@@ -78,6 +78,22 @@ ACTIONS = [
         ],
         "output": {"kind": "message"},
     },
+    {
+        "name": "forget",
+        "label": "Forget a work",
+        "description": "Stop tracking a work: its ingested chapters and any channel bound "
+                       "to it are deleted. A book already filed in the library is untouched.",
+        "input": [
+            {
+                "key": "url",
+                "label": "Royal Road or hungryshedgerow URL",
+                "type": "url",
+                "required": True,
+                "placeholder": "https://www.royalroad.com/fiction/12345",
+            }
+        ],
+        "output": {"kind": "message"},
+    },
 ]
 
 UI = {
@@ -110,6 +126,10 @@ def build_manifest() -> dict:
             "metadata": True,
             "cover": True,
             "cancel": True,
+            # Protocol 3.7. Discord delivers chapters whenever the author posts, which no
+            # amount of polling can predict, so this is the one plugin that genuinely has
+            # something to say between requests.
+            "notify": True,
         },
         "config": CONFIG,
         "actions": ACTIONS,

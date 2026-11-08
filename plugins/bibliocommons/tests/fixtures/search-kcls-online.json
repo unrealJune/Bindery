@@ -1,0 +1,340 @@
+{
+ "catalogSearch": {
+  "searchType": "keyword",
+  "query": "dune",
+  "pagination": {
+   "count": 95,
+   "limit": 25,
+   "page": 1,
+   "pages": 4,
+   "pageForSolr": 0
+  },
+  "results": [
+   {
+    "representative": "S82C940988",
+    "manifestations": [
+     "S82C940988"
+    ]
+   },
+   {
+    "representative": "S82C1523374",
+    "manifestations": [
+     "S82C1523374"
+    ]
+   },
+   {
+    "representative": "S82C2492482",
+    "manifestations": [
+     "S82C2492482"
+    ]
+   }
+  ],
+  "fields": []
+ },
+ "entities": {
+  "bibs": {
+   "S82C940988": {
+    "id": "S82C940988",
+    "sourceLibId": 82,
+    "briefInfo": {
+     "metadataId": "S82C940988",
+     "title": "Heretics of Dune",
+     "subtitle": "",
+     "format": "EBOOK",
+     "superFormats": [
+      "BOOKS",
+      "ELECTRONIC_FORMATS"
+     ],
+     "consumptionFormat": "READ",
+     "callNumber": "eBOOK S HERBERT",
+     "authors": [
+      "Herbert, Frank"
+     ],
+     "publicationDate": "2008",
+     "jacket": {
+      "type": "SYNDETICS",
+      "small": "https://secure.syndetics.com/index.aspx?isbn=9781436247252/SC.GIF&client=kclsp&type=xw12&oclc=",
+      "medium": "https://secure.syndetics.com/index.aspx?isbn=9781436247252/MC.GIF&client=kclsp&type=xw12&oclc=",
+      "large": "https://secure.syndetics.com/index.aspx?isbn=9781436247252/LC.JPG&client=kclsp&type=xw12&oclc=",
+      "local_url": null
+     },
+     "isbns": [
+      "9781436247252",
+      "143624725X",
+      "9781440619649",
+      "1440619646"
+     ],
+     "primaryLanguage": "eng",
+     "series": [],
+     "edition": null,
+     "multiscriptTitle": null,
+     "multiscriptAuthor": null,
+     "contentType": "FICTION",
+     "audiences": [
+      "ADULT"
+     ],
+     "groupKey": "heretics_of_dune\ufffdherbert_frank\ufffdtext_eng",
+     "id": "S82C940988",
+     "rating": {
+      "averageRating": 80,
+      "totalCount": 141
+     }
+    },
+    "policy": {
+     "materialType": "DIGITAL",
+     "provider": "OverDriveAPI",
+     "holdable": true,
+     "itemLevelHoldableItems": false,
+     "materialPolicy": {
+      "supportsBatchVolumeHolds": false,
+      "itemLevelHoldsPredetermined": false,
+      "requiresDuration": false,
+      "requiresEmailDuringHold": true,
+      "requiresFormatDuringHold": false,
+      "requiresFormatDuringCheckout": false,
+      "supportsDownload": true,
+      "supportsFastAvailability": false,
+      "supportsReadNow": true,
+      "showFormatDuringHold": true,
+      "showFormatDuringCheckout": true,
+      "supportsSuspendHold": true,
+      "supportsSuspendHoldStartDateEdit": false,
+      "supportsSuspendHoldEndDateEdit": false,
+      "showQuickstartLink": true,
+      "supportsBorrowingHistory": false,
+      "borrowingHistorySupportsReturnedDates": false,
+      "maintainsBorrowingHistoryOnDisable": false,
+      "supportsCancelledExpiredHolds": false,
+      "helpUrl": "http://www.overdrive.com/resources/drc/Default.aspx?type=ebook",
+      "quickStartUrl": "https://kcls.org/faqs/how-do-i-checkout-and-read-or-listen-to-an-ebook-or-downloadable-audiobook-from-overdrive/",
+      "externalAPI": true,
+      "healthy": true
+     }
+    },
+    "availability": {
+     "metadataId": "S82C940988",
+     "bibType": "DIGITAL",
+     "availabilityLocationType": "OTHER",
+     "status": "AVAILABLE",
+     "circulationType": "REQUEST",
+     "libraryUseOnly": false,
+     "heldCopies": 0,
+     "availableCopies": 1,
+     "totalCopies": 3,
+     "onOrderCopies": null,
+     "volumesCount": null,
+     "localisedStatus": "AVAILABLE",
+     "eresourceUrl": null,
+     "eresourceDescription": null,
+     "singleBranch": false,
+     "statusType": "AVAILABLE"
+    }
+   },
+   "S82C1523374": {
+    "id": "S82C1523374",
+    "sourceLibId": 82,
+    "briefInfo": {
+     "metadataId": "S82C1523374",
+     "title": "Dune",
+     "subtitle": "",
+     "format": "AB",
+     "superFormats": [
+      "AUDIOBOOKS_SPOKEN_WORD",
+      "ELECTRONIC_FORMATS",
+      "TALKING_BOOKS"
+     ],
+     "consumptionFormat": "LISTEN",
+     "callNumber": "eAUDIOBOOK OVERDRIVE",
+     "authors": [
+      "Herbert, Frank"
+     ],
+     "publicationDate": "2007",
+     "jacket": {
+      "type": "SYNDETICS",
+      "small": "https://secure.syndetics.com/index.aspx?isbn=9781427218360/SC.GIF&client=kclsp&type=xw12&oclc=",
+      "medium": "https://secure.syndetics.com/index.aspx?isbn=9781427218360/MC.GIF&client=kclsp&type=xw12&oclc=",
+      "large": "https://secure.syndetics.com/index.aspx?isbn=9781427218360/LC.JPG&client=kclsp&type=xw12&oclc=",
+      "local_url": "https://cor-liv-cdn-static.bibliocommons.com/image_proxy?url=http://images.contentreserve.com/ImageType-100/1493-1/%7BD91B7033-FAD9-49CE-A468-BB3B950FD5D5%7DImg100.jpg"
+     },
+     "isbns": [
+      "9781427218360",
+      "1427218366"
+     ],
+     "primaryLanguage": "eng",
+     "series": [],
+     "edition": "Unabridged",
+     "multiscriptTitle": null,
+     "multiscriptAuthor": null,
+     "contentType": "FICTION",
+     "audiences": [
+      "ADULT"
+     ],
+     "groupKey": "dune\ufffdherbert_frank\ufffdtext_eng",
+     "id": "S82C1523374",
+     "rating": {
+      "averageRating": 73,
+      "totalCount": 15
+     }
+    },
+    "policy": {
+     "materialType": "DIGITAL",
+     "provider": "OverDriveAPI",
+     "holdable": true,
+     "itemLevelHoldableItems": false,
+     "materialPolicy": {
+      "supportsBatchVolumeHolds": false,
+      "itemLevelHoldsPredetermined": false,
+      "requiresDuration": false,
+      "requiresEmailDuringHold": true,
+      "requiresFormatDuringHold": false,
+      "requiresFormatDuringCheckout": false,
+      "supportsDownload": true,
+      "supportsFastAvailability": false,
+      "supportsReadNow": true,
+      "showFormatDuringHold": true,
+      "showFormatDuringCheckout": true,
+      "supportsSuspendHold": true,
+      "supportsSuspendHoldStartDateEdit": false,
+      "supportsSuspendHoldEndDateEdit": false,
+      "showQuickstartLink": true,
+      "supportsBorrowingHistory": false,
+      "borrowingHistorySupportsReturnedDates": false,
+      "maintainsBorrowingHistoryOnDisable": false,
+      "supportsCancelledExpiredHolds": false,
+      "helpUrl": "http://www.overdrive.com/resources/drc/Default.aspx?type=ebook",
+      "quickStartUrl": "https://kcls.org/faqs/how-do-i-checkout-and-read-or-listen-to-an-ebook-or-downloadable-audiobook-from-overdrive/",
+      "externalAPI": true,
+      "healthy": true
+     }
+    },
+    "availability": {
+     "metadataId": "S82C1523374",
+     "bibType": "DIGITAL",
+     "availabilityLocationType": "OTHER",
+     "status": "AVAILABLE",
+     "circulationType": "REQUEST",
+     "libraryUseOnly": false,
+     "heldCopies": 0,
+     "availableCopies": 153,
+     "totalCopies": 348,
+     "onOrderCopies": null,
+     "volumesCount": null,
+     "localisedStatus": "AVAILABLE",
+     "eresourceUrl": null,
+     "eresourceDescription": null,
+     "singleBranch": false,
+     "statusType": "AVAILABLE"
+    }
+   },
+   "S82C2492482": {
+    "id": "S82C2492482",
+    "sourceLibId": 82,
+    "briefInfo": {
+     "metadataId": "S82C2492482",
+     "title": "Dune",
+     "subtitle": "",
+     "format": "MUSIC_ONLINE",
+     "superFormats": [
+      "MUSIC_SOUND",
+      "ELECTRONIC_FORMATS"
+     ],
+     "consumptionFormat": "LISTEN",
+     "callNumber": "STREAMING MUSIC HOOPLA",
+     "authors": [
+      "Toto (Musical group)"
+     ],
+     "publicationDate": "1993",
+     "jacket": {
+      "type": "SYNDETICS",
+      "small": null,
+      "medium": null,
+      "large": null,
+      "local_url": "https://d2snwnmzyr8jue.cloudfront.net/uvm_00042282377029_180.jpeg"
+     },
+     "isbns": [],
+     "primaryLanguage": "eng",
+     "series": [],
+     "edition": null,
+     "multiscriptTitle": null,
+     "multiscriptAuthor": null,
+     "contentType": "UNDETERMINED",
+     "audiences": [
+      "ADULT"
+     ],
+     "groupKey": "dune\ufffdtoto\ufffdmusic",
+     "id": "S82C2492482",
+     "rating": {}
+    },
+    "policy": {
+     "materialType": "PHYSICAL",
+     "provider": "ILS",
+     "holdable": false,
+     "itemLevelHoldableItems": false,
+     "materialPolicy": {
+      "supportsBatchVolumeHolds": false,
+      "itemLevelHoldsPredetermined": true,
+      "requiresDuration": false,
+      "requiresEmailDuringHold": false,
+      "requiresFormatDuringHold": false,
+      "requiresFormatDuringCheckout": false,
+      "supportsDownload": false,
+      "supportsFastAvailability": false,
+      "supportsReadNow": false,
+      "showFormatDuringHold": false,
+      "showFormatDuringCheckout": false,
+      "supportsSuspendHold": false,
+      "supportsSuspendHoldStartDateEdit": false,
+      "supportsSuspendHoldEndDateEdit": true,
+      "showQuickstartLink": false,
+      "supportsBorrowingHistory": false,
+      "borrowingHistorySupportsReturnedDates": true,
+      "maintainsBorrowingHistoryOnDisable": true,
+      "supportsCancelledExpiredHolds": true,
+      "helpUrl": null,
+      "quickStartUrl": null,
+      "externalAPI": false,
+      "healthy": true
+     }
+    },
+    "availability": {
+     "metadataId": "S82C2492482",
+     "bibType": "DIGITAL_RESOURCE",
+     "availabilityLocationType": "OTHER",
+     "status": "AVAILABLE",
+     "circulationType": "NON_CIRCULATING",
+     "libraryUseOnly": false,
+     "heldCopies": 0,
+     "availableCopies": 0,
+     "totalCopies": 0,
+     "onOrderCopies": 0,
+     "volumesCount": 0,
+     "localisedStatus": "DIGITAL_ALWAYS_AVAILABLE",
+     "eresourceUrl": "https://www.hoopladigital.com/title/11904410?utm_source=MARC&Lid=hhh985",
+     "eresourceDescription": "Borrow this title from hoopla",
+     "singleBranch": false,
+     "statusType": "AVAILABLE"
+    }
+   }
+  },
+  "sites": {
+   "WA-KCLS": {
+    "siteId": "WA-KCLS",
+    "type": "CORE",
+    "libraryId": 82,
+    "shortName": "KCLS",
+    "longName": "King County Library System",
+    "logo": "/images/WA-KCLS/logo.png",
+    "domain": "kcls",
+    "subdomain": "kcls",
+    "defaultScopeId": "WA-KCLS",
+    "scopes": [
+     {
+      "scopeName": "King County Library System",
+      "scopeId": "WA-KCLS",
+      "parentScopeId": null
+     }
+    ]
+   }
+  }
+ }
+}

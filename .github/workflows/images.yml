@@ -27,6 +27,10 @@ jobs:
             context: plugins/hedgerow
             file: plugins/hedgerow/Dockerfile
             image: ghcr.io/${{ github.repository_owner }}/bindery-plugin-hedgerow
+          - name: bibliocommons
+            context: plugins/bibliocommons
+            file: plugins/bibliocommons/Dockerfile
+            image: ghcr.io/${{ github.repository_owner }}/bindery-plugin-bibliocommons
     steps:
       - uses: actions/checkout@v7
       - uses: docker/setup-buildx-action@v4

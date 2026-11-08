@@ -65,11 +65,16 @@ The mechanism does not change between `mode: sidecar` (localhost) and `mode: ser
 | `X-Bindery-Job-Id` | `download`, artifact, cancel | The job this request belongs to |
 | `X-Bindery-Base` | UI requests | Public path prefix the plugin's UI is mounted at (§6) |
 | `X-Bindery-Csrf` | UI requests | Opaque; a plugin **MUST NOT** need to interpret it |
+| `X-Bindery-Notify` | every `/bindery/v1` request | Absolute URL for change notifications (§3.7). Absent when the host accepts none |
+| `X-Bindery-Notify-Token` | every `/bindery/v1` request | Bearer token for that URL. **MUST NOT** be logged |
 | `User-Agent` | every request | `Bindery/<version>` |
 
 ---
 
 ## 3. Endpoints
+
+Everything in this table is served by the **plugin** and called by Bindery. The single
+exception is §3.7, which Bindery serves and the plugin calls.
 
 | Method | Path | Required |
 |---|---|---|
@@ -81,6 +86,12 @@ The mechanism does not change between `mode: sidecar` (localhost) and `mode: ser
 | `DELETE` | `/bindery/v1/jobs/{jobId}` | yes |
 | `POST` | `/bindery/v1/actions/{action}` | no — see `actions` (§5) |
 | `GET`/`POST` | `/bindery/v1/ui/{*path}` | no — only for `ui.mode` `sandboxed` or `fragment` (§6) |
+| `POST` | `{notifyUrl}` — *served by Bindery* | no — see `capabilities.notify` (§3.7) |
+| `POST` | `/bindery/v1/circulation/verify` | no — see `capabilities.circulation` (§3.8) |
+| `POST` | `/bindery/v1/circulation/search` | no — §3.8 |
+| `POST` | `/bindery/v1/circulation/snapshot` | no — §3.8 |
+| `POST` | `/bindery/v1/circulation/holds` | no — §3.8 |
+| `POST` | `/bindery/v1/circulation/holds/{holdId}/{operation}` | no — §3.8 |
 
 ### 3.1 `GET /healthz`
 
@@ -113,10 +124,13 @@ for the lifetime of the process; Bindery caches it and refreshes on a configurab
     "update": true,
     "metadata": true,
     "cover": true,
-    "cancel": true
+    "cancel": true,
+    "notify": false,
+    "circulation": false
   },
   "config": [ /* section 4 */ ],
   "actions": [ /* section 5 */ ],
+  "circulation": { /* section 3.8, only with capabilities.circulation */ },
   "ui": { "mode": "declarative" }
 }
 ```
@@ -135,6 +149,7 @@ for the lifetime of the process; Bindery caches it and refreshes on a configurab
 | `capabilities` | object | no | Missing members are `false`, except `cancel`, which defaults to `true`. |
 | `config` | array | no | Field schema, §4. |
 | `actions` | array | no | Declarative actions, §5. |
+| `circulation` | object | with `capabilities.circulation` | Account schema for library circulation, §3.8. |
 | `ui` | object | no | Defaults to `{"mode":"declarative"}`. §6. |
 
 **Regex safety.** `matches` entries are compiled by the host with a timeout and a length
@@ -325,6 +340,284 @@ idempotent — deleting an unknown or already-deleted job is `204`, not `404`.
 The host calls this after it has fetched every artifact it wants. A plugin **MUST** also
 expire artifacts on its own so that a host crash does not leak disk forever.
 
+### 3.7 `POST {notifyUrl}` — change notification
+
+The one endpoint in this protocol that **Bindery** serves and a **plugin** calls. Every
+other exchange is host-pull; this inverts it, so its scope is deliberately tiny.
+
+A plugin that learns about new content out-of-band — a chat bot receiving a file, a webhook,
+anything not driven by a Bindery request — has no way to say so. It can only wait to be
+polled. This endpoint lets it raise a hand. It carries **no content**: it names a source and
+says "worth re-fetching". Bindery decides whether, and when, to act.
+
+**Discovery.** Bindery advertises the endpoint on every `/bindery/v1` request via the
+headers in §2.2:
+
+| Header | Meaning |
+|---|---|
+| `X-Bindery-Notify` | Absolute URL to POST to |
+| `X-Bindery-Notify-Token` | Bearer token to authenticate with |
+
+Both are absent when the host does not accept notifications. A plugin **MAY** persist the
+most recent pair so it can notify outside a request (this is the whole point — a bot is not
+serving a request when a file arrives), and **MUST** tolerate their absence by doing nothing
+extra. A plugin **MUST NOT** log the token.
+
+**Request.**
+
+```jsonc
+POST /bindery/v1/notify
+Authorization: Bearer <X-Bindery-Notify-Token>
+Content-Type: application/json
+
+{
+  "plugin": "hedgerow",
+  "sourceUrl": "https://www.royalroad.com/fiction/140087",
+  "reason": "new-chapters"
+}
+```
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `plugin` | string | yes | The notifying plugin's `name`. **MUST** match the token's plugin. |
+| `sourceUrl` | string | yes | Identifies the affected book, compared against `Book.sourceUrl`. **SHOULD** be the same normalized form the plugin returns in download metadata. |
+| `reason` | string | no | Free-form, for logs. Not interpreted. |
+
+**Responses.** `202` accepted (an update was queued). `200` with `{"accepted": false,
+"reason": "..."}` when understood but not acted on — unknown source, a job already running,
+or debounced; this is **not** an error. `401` bad token. `429` rate-limited.
+
+**It is a hint, never a command.** Bindery **MAY** coalesce, defer, rate-limit, or ignore
+any notification, and a plugin **MUST NOT** depend on one being honoured. The host's own
+update schedule is the backstop that makes this endpoint an optimization rather than a
+correctness requirement — if every notification were dropped, books would still converge on
+the next scheduled pass, just later.
+
+**Host obligations.** Bindery **MUST** issue a distinct token per plugin, compare it in
+constant time, and resolve the caller's identity from the *token* — never from the `plugin`
+field, which is a claim to be checked against it, not trusted. It **MUST** only act on books
+whose `sourcePlugin` is that plugin, so a compromised plugin cannot drive refreshes of books
+it does not own. It **MUST** rate-limit per plugin and debounce per book.
+
+**Plugin obligations.** A plugin **SHOULD** debounce — one notification after a burst of
+arrivals, not one per file — and **MUST** treat any failure as routine: no retry storm, no
+blocking the work that triggered it. Declared by `capabilities.notify`.
+
+### 3.8 Circulation — library search, holds, and loans
+
+Optional. Declared by `capabilities.circulation`. Everything else in this protocol produces
+a *file*. Circulation produces *state*: a hold on a physical book sits in a queue for weeks,
+moves to a branch, waits on a shelf with a pickup deadline, becomes a loan, and comes due.
+None of that is an artifact, so it does not travel through `download`.
+
+The division of labour is the same one the rest of the protocol uses — the plugin knows the
+site, the host owns everything durable:
+
+- **The plugin** speaks to the library's catalog: it searches, places and changes holds, and
+  reports what an account currently holds and has checked out.
+- **The host** owns the accounts (and their secrets), the lifecycle of every hold and loan,
+  the history of transitions, and any notification sent about them. A plugin never sends a
+  message to a person and never stores a person's credentials.
+
+A circulation plugin is still a plugin: it **MUST** serve every required endpoint in §3. One
+that downloads nothing **SHOULD** declare no `matches` and **MUST** answer `download` with a
+well-formed `result` of `status: "error"`, `code: "unsupported_url"`.
+
+#### Accounts
+
+Library credentials belong to a *person*, not to the installation — two people in one
+household have two cards, and one person may have cards at two library systems. So, unlike
+`config` (§4), which is one set of values for the whole plugin, circulation is driven by
+**accounts**: the host lets each signed-in person connect any number of accounts to a
+circulation plugin, using a field schema the plugin declares.
+
+```jsonc
+"circulation": {
+  "accountFields": [
+    { "key": "library", "label": "Library", "type": "select", "required": true,
+      "options": [ { "value": "seattle", "label": "The Seattle Public Library" },
+                   { "value": "kcls",    "label": "King County Library System" } ] },
+    { "key": "card", "label": "Library card number", "type": "string", "required": true },
+    { "key": "pin",  "label": "PIN or password",     "type": "secret", "required": true }
+  ],
+  "mediums": ["physical", "digital"],
+  "holdOperations": ["cancel", "suspend", "resume"]
+}
+```
+
+| Field | Required | Notes |
+|---|---|---|
+| `accountFields` | yes | Field descriptors exactly as §4, validated and stored by the host the same way — `secret` values encrypted at rest and never rendered back. |
+| `mediums` | no | Which of `physical`, `digital` the plugin can return. Default both. |
+| `holdOperations` | no | Which hold operations the plugin implements. Default `["cancel"]`. |
+
+Every circulation request carries the account it acts for:
+
+```json
+"account": { "id": "1f0c…", "fields": { "library": "seattle", "card": "…", "pin": "…" } }
+```
+
+- `id` is host-generated, opaque, and stable for the life of the account. A plugin **MAY**
+  key a cache of remote sessions on it, and **MUST NOT** interpret it.
+- `fields` arrive in cleartext for the same reason `config` secrets do (§4). A plugin
+  **MUST NOT** persist them, **MUST NOT** log them, and **MUST** discard any session it
+  cached for an `id` whose `fields` have changed.
+
+#### Mediums
+
+Every catalog item, hold, and loan carries a `medium`, and a host **MUST** show it, because
+the two behave nothing alike and conflating them misleads the person relying on it:
+
+| `medium` | Means | A ready hold means |
+|---|---|---|
+| `physical` | A copy on a shelf: book, large print, audiobook on CD, DVD. | Go to a branch before `readyUntil`. |
+| `digital` | A licence through a lending platform (OverDrive/Libby, hoopla, …). | Borrow it in the platform's app before `readyUntil`. |
+
+`format` refines it — `book`, `large_print`, `graphic_novel`, `ebook`, `audiobook`,
+`audiobook_cd`, `dvd`, `bluray`, `music_cd`, `magazine`, `other` — and `formatLabel` is the
+library's own wording, for display.
+
+#### `POST /bindery/v1/circulation/verify`
+
+Checks an account's credentials when a person connects it, and returns what the host needs
+to describe it.
+
+```jsonc
+// request
+{ "account": { "id": "…", "fields": { … } } }
+// response 200
+{ "status": "ok",
+  "library": { "id": "seattle", "name": "The Seattle Public Library" },
+  "displayName": "card ending 4821",
+  "pickupLocations": [ { "id": "3", "name": "Central Library" } ] }
+```
+
+`displayName` **MUST NOT** contain the full card number or any secret. `pickupLocations`
+**MAY** be empty, in which case a hold is placed at the account's default branch.
+
+#### `POST /bindery/v1/circulation/search`
+
+```jsonc
+// request
+{ "account": { … }, "query": "dune", "medium": "physical", "page": 1 }
+// response 200
+{ "status": "ok", "total": 228, "page": 1, "pages": 10,
+  "items": [ {
+    "id": "S82C1234567",
+    "title": "Dune", "subtitle": null, "authors": ["Herbert, Frank"], "year": "2019",
+    "url": "https://kcls.bibliocommons.com/v2/record/S82C1234567",
+    "coverUrl": "https://…",
+    "medium": "physical", "format": "book", "formatLabel": "Book",
+    "provider": null,
+    "availability": { "status": "unavailable", "copies": 12, "availableCopies": 0,
+                      "holds": 24, "onOrder": 0 },
+    "holdable": true,
+    "borrowUrl": null
+  } ] }
+```
+
+- `medium` in the request is `any` (default), `physical`, or `digital`. A plugin **MUST**
+  honour it: every returned item's `medium` matches the filter unless the filter is `any`.
+- Search **MUST NOT** require the account's credentials to be valid. It uses the account to
+  know *which* library to search; a person whose PIN has expired can still look things up.
+- `availability.status` is one of `available`, `unavailable`, `on_order`, `not_holdable`,
+  `library_use_only`, `unknown`. The counts are optional integers.
+- `holdable` says whether `POST …/holds` will accept this item. A digital item the plugin
+  cannot place a hold on **SHOULD** carry `borrowUrl`, an absolute `https:` URL where the
+  person can borrow it themselves.
+- `provider` names the lending platform for digital items, e.g. `"OverDrive"`.
+
+#### `POST /bindery/v1/circulation/snapshot`
+
+Everything the account currently has: every active hold and every current loan.
+
+```jsonc
+// request
+{ "account": { … } }
+// response 200
+{ "status": "ok",
+  "holds": [ {
+    "id": "h-998877", "itemId": "S82C1234567",
+    "title": "Dune", "authors": ["Herbert, Frank"], "coverUrl": "…", "url": "…",
+    "medium": "physical", "format": "book",
+    "state": "ready",
+    "queuePosition": null, "queueSize": null,
+    "pickupLocation": { "id": "3", "name": "Central Library" },
+    "readyUntil": "2026-11-14T00:00:00Z",
+    "suspendedUntil": null,
+    "placedAt": "2026-10-01T17:02:00Z"
+  } ],
+  "loans": [ {
+    "id": "c-112233", "itemId": "S82C7654321",
+    "title": "…", "authors": [], "medium": "physical", "format": "book",
+    "dueAt": "2026-11-27T00:00:00Z", "overdue": false, "renewable": true
+  } ] }
+```
+
+Hold `state` is one of:
+
+| `state` | Meaning |
+|---|---|
+| `pending` | Waiting in the queue. `queuePosition` / `queueSize` when known. |
+| `in_transit` | A copy is assigned and moving to the pickup branch. |
+| `ready` | Waiting for the person. `readyUntil` is the pickup (or borrow) deadline. |
+| `suspended` | Paused by the person; keeps its place but is skipped. `suspendedUntil` when known. |
+
+**A snapshot is complete or it is an error.** The host infers what *happened* — a hold
+collected, a hold that lapsed on the shelf, a book returned — from what has *disappeared*
+since the previous snapshot. A plugin that cannot see the whole account (a page failed to
+load, a session expired mid-way) **MUST** answer with `status: "error"` rather than return a
+partial list, because a partial list is indistinguishable from "every missing hold was
+cancelled". The host, for its part, **MUST NOT** draw any conclusion from a failed snapshot.
+
+Ids are the library's, stable for the life of the hold or loan, and namespaced within the
+account. `itemId` is the catalog id that `search` returns, and is how the host recognizes
+that a hold which vanished became the loan that appeared.
+
+#### `POST /bindery/v1/circulation/holds`
+
+Places a hold.
+
+```jsonc
+// request
+{ "account": { … }, "itemId": "S82C1234567", "pickupLocationId": "3" }
+// response 200
+{ "status": "ok", "hold": { /* a hold object, as in snapshot */ } }
+```
+
+`pickupLocationId` is optional; without it the library's default for the account applies.
+`hold` is optional in the response — the host's next snapshot will find it either way.
+
+#### `POST /bindery/v1/circulation/holds/{holdId}/{operation}`
+
+`operation` is `cancel`, `suspend`, or `resume`, and **MUST** be one the manifest lists in
+`holdOperations`; anything else is `404`.
+
+```jsonc
+// request
+{ "account": { … }, "until": "2026-12-20" }   // `until` only for suspend; optional
+// response 200
+{ "status": "ok", "hold": { … } }              // `hold` absent after cancel
+```
+
+#### Errors and timing
+
+All five endpoints answer errors as the action envelope does (§5):
+`{ "status": "error", "error": { "code": …, "message": …, "retryable": … } }` with `200`, or
+the §7 envelope with a 4xx/5xx status for a malformed request. Additional codes for
+circulation:
+
+| `code` | Retryable by default | Meaning |
+|---|---|---|
+| `not_holdable` | no | The item cannot be held (reference only, digital without integration, …). |
+| `already_held` | no | The account already has a hold on this item. |
+| `hold_limit` | no | The account has reached the library's hold limit. |
+| `account_blocked` | no | The library has blocked the account — fines, an expired card. |
+
+`auth_required` means the account's credentials were refused, and is how the host learns to
+ask the person to re-enter them. Every circulation call is synchronous and **MUST** finish
+within the action timeout (§9).
+
 ---
 
 ## 4. Config schema
@@ -506,6 +799,8 @@ that the UI does not know about is a design smell.
 | Artifact size | 512 MiB (configurable) | host |
 | Probe timeout | 5 s | host |
 | Action timeout | 30 s | host |
+| Circulation call timeout | 30 s (the action timeout) | host |
+| Circulation response body | 2 MiB | host |
 | Manifest/health timeout | 10 s | host |
 | Download idle timeout | 300 s between events | host |
 | Artifact retention | at least 15 min after result | plugin |
@@ -525,7 +820,9 @@ python tests/conformance/run.py --base-url http://localhost:8080 --token dev
 
 It checks: auth enforcement, manifest schema and constraints, probe behaviour, the NDJSON
 stream's shape and ordering, artifact retrieval and content types, cancellation idempotency,
-action schemas, and — for `fragment` plugins — that fragments are fragments, honour
+action schemas, circulation (§3.8: manifest, request validation, and — given `--account` —
+search, the medium filter, verify, and snapshot; placing a real hold is opt-in), and — for
+`fragment` plugins — that fragments are fragments, honour
 `X-Bindery-Base`, and carry no JavaScript. XSS vectors from `tests/conformance/vectors/`
 are the shared corpus the host's sanitizer tests use too.
 
@@ -539,4 +836,6 @@ not a framework, not a base image.
 | Version | Change |
 |---|---|
 | 1 | Initial contract. |
+| 1 (additive) | `capabilities.notify` and §3.7 added — a plugin that learns of new content out-of-band may POST a contentless hint to Bindery, which decides whether to queue an update. No version bump: the capability defaults to `false`, the advertising headers are optional, and a host that serves no endpoint simply omits them. The host's update schedule remains the backstop, so the feature is an optimization and never a correctness requirement. |
+| 1 (additive) | `capabilities.circulation`, the manifest's `circulation` block, and §3.8 added — library search, holds, and loans, with per-person accounts and an explicit `physical`/`digital` medium on every item. New error codes `not_holdable`, `already_held`, `hold_limit`, `account_blocked`; older hosts already treat unknown codes as `internal`. No version bump: the capability defaults to `false`, a host that does not implement it never calls the new endpoints, and a circulation plugin still serves every required endpoint. |
 | 1 (additive) | `ui.mode: "sandboxed"` added — a full document in an opaque-origin iframe, plugin JavaScript permitted, host communication via the `postMessage` bridge. `fragment` deprecated but unchanged. `iframe` becomes a deprecated alias for `sandboxed`. No version bump: unknown `ui.mode` values already degrade to `declarative`. |

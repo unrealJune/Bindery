@@ -27,7 +27,7 @@ public static class ApiEndpoints
             ClaimsPrincipal user,
             CancellationToken ct) =>
         {
-            var result = await downloads.EnqueueAsync(request.Url, user.Identity?.Name, request.Plugin, ct);
+            var result = await downloads.EnqueueAsync(request.Url, user.Identity?.Name, request.Plugin, ct, Identity.SubjectOf(user));
 
             return result.Accepted
                 ? Results.Created($"/api/downloads/{result.Job!.Id}", JobView.From(result.Job))
@@ -76,13 +76,16 @@ public static class ApiEndpoints
             return book is null ? Results.NotFound() : Results.Ok(BookView.From(book));
         });
 
+        api.MapDelete("/books/{id:guid}", async (Guid id, LibraryWriter writer, CancellationToken ct) =>
+            await writer.DeleteAsync(id, ct) ? Results.NoContent() : Results.NotFound());
+
         api.MapPost("/books/{id:guid}/refresh", async (
             Guid id,
             DownloadService downloads,
             ClaimsPrincipal user,
             CancellationToken ct) =>
         {
-            var result = await downloads.EnqueueUpdateAsync(id, user.Identity?.Name, ct);
+            var result = await downloads.EnqueueUpdateAsync(id, user.Identity?.Name, ct, Identity.SubjectOf(user));
 
             return result.Accepted
                 ? Results.Accepted($"/api/downloads/{result.Job!.Id}", JobView.From(result.Job))
@@ -93,6 +96,39 @@ public static class ApiEndpoints
 
         api.MapPost("/library/scan", async (LibraryScanner scanner, CancellationToken ct) =>
             Results.Ok(await scanner.ScanAsync(ct)));
+
+        // The form is read off HttpContext rather than bound with [FromForm]: minimal-API
+        // form binding demands the antiforgery middleware, which Bindery does not run
+        // because Razor Pages and the plugin proxy each handle their own token.
+        api.MapPost("/library/upload", async (HttpContext context, LibraryWriter writer, CancellationToken ct) =>
+        {
+            if (!context.Request.HasFormContentType)
+            {
+                return Results.BadRequest(new { error = "Expected a multipart form with a 'file' part." });
+            }
+
+            var form = await context.Request.ReadFormAsync(ct);
+            var file = form.Files.GetFile("file") ?? form.Files.FirstOrDefault();
+
+            if (file is null || file.Length == 0)
+            {
+                return Results.BadRequest(new { error = "No file was uploaded." });
+            }
+
+            await using var content = file.OpenReadStream();
+
+            var result = await writer.ImportAsync(
+                content, file.FileName, form["title"], form["author"], ct);
+
+            return result.Accepted
+                ? Results.Created($"/api/books/{result.BookId}", new
+                {
+                    id = result.BookId,
+                    title = result.Title,
+                    alreadyHeld = result.AlreadyHeld
+                })
+                : Results.BadRequest(new { error = result.Problem });
+        });
 
         // ------------------------------------------------------------ plugins
 

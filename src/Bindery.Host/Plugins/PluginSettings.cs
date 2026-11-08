@@ -169,11 +169,21 @@ public sealed class PluginSettingsStore(
     public static IReadOnlyList<string> Validate(
         Protocol.Manifest manifest,
         IReadOnlyDictionary<string, string?> submitted,
+        IReadOnlySet<string> alreadySetSecrets) =>
+        ValidateFields(manifest.Config, submitted, alreadySetSecrets);
+
+    /// <summary>
+    /// The same checks for any list of §4 field descriptors — plugin settings, action input,
+    /// and circulation account fields all share one schema, so they share one validator.
+    /// </summary>
+    public static IReadOnlyList<string> ValidateFields(
+        Microsoft.FSharp.Collections.FSharpList<Protocol.ConfigField> fields,
+        IReadOnlyDictionary<string, string?> submitted,
         IReadOnlySet<string> alreadySetSecrets)
     {
         var problems = new List<string>();
 
-        foreach (var field in manifest.Config.AsList())
+        foreach (var field in fields.AsList())
         {
             if (!submitted.TryGetValue(field.Key, out var raw))
             {

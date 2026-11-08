@@ -22,7 +22,8 @@ public sealed class DownloadService(
         string url,
         string? requestedBy,
         string? preferredPlugin,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? requesterSubject = null)
     {
         url = (url ?? string.Empty).Trim();
 
@@ -55,7 +56,8 @@ public sealed class DownloadService(
             Url = url,
             PluginName = resolved.Descriptor.Name,
             Status = JobStatus.Queued,
-            RequestedBy = requestedBy
+            RequestedBy = requestedBy,
+            RequesterSubject = requesterSubject
         };
 
         db.Jobs.Add(entity);
@@ -70,7 +72,8 @@ public sealed class DownloadService(
     public async Task<EnqueueResult> EnqueueUpdateAsync(
         Guid bookId,
         string? requestedBy,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? requesterSubject = null)
     {
         var book = await db.Books.FirstOrDefaultAsync(candidate => candidate.Id == bookId, cancellationToken);
 
@@ -84,7 +87,7 @@ public sealed class DownloadService(
             return new EnqueueResult(null, "This book has no source URL, so there is nothing to refresh from.");
         }
 
-        var result = await EnqueueAsync(book.SourceUrl, requestedBy, book.SourcePlugin, cancellationToken);
+        var result = await EnqueueAsync(book.SourceUrl, requestedBy, book.SourcePlugin, cancellationToken, requesterSubject);
 
         if (result.Job is not null)
         {

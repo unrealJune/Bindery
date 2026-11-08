@@ -1,11 +1,14 @@
+using System.Security.Claims;
 using Bindery.Core;
 using Bindery.Host.Catalog;
 using Bindery.Host.Configuration;
+using Bindery.Host.Data;
 using Bindery.Host.Library;
 using Bindery.Host.Security;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using Microsoft.FSharp.Core;
+using System.Text.Json.Serialization;
 using CoreOpds = Bindery.Core.Opds;
 
 namespace Bindery.Host.Opds;
@@ -20,17 +23,62 @@ namespace Bindery.Host.Opds;
 /// </remarks>
 public static class OpdsEndpoints
 {
+    /// <summary>
+    /// Lets every <c>GET</c> in the group answer <c>HEAD</c> as well.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Ereaders probe a feed with <c>HEAD</c> before fetching it — KOReader's built-in
+    /// browser and <c>opds_plus.koplugin</c> both do, to read <c>Last-Modified</c> for
+    /// their catalog cache. Routing does not fall back from <c>HEAD</c> to <c>GET</c>, so
+    /// without this the probe is answered <c>405</c>.
+    /// </para>
+    /// <para>
+    /// A client degrades gracefully from that — no <c>Last-Modified</c> means it fetches
+    /// anyway — but the method rejection happens in the matcher, <em>before</em>
+    /// authorization runs. On a catalog reachable from outside the tailnet that is a
+    /// response served to an unauthenticated stranger, confirming the path and its verb.
+    /// Answering the method instead puts every response on this prefix behind
+    /// <see cref="AuthPolicies.ReadCatalog"/>, which is the property worth having.
+    /// Kestrel drops the body from a <c>HEAD</c> response on its own.
+    /// </para>
+    /// </remarks>
+    private static TBuilder AlsoAnswerHead<TBuilder>(this TBuilder builder)
+        where TBuilder : IEndpointConventionBuilder
+    {
+        // Finally, not Add: the verbs come from the MapGet call itself, and this has to see
+        // the metadata as it finally stands rather than as it is part-way through being
+        // assembled. The matcher reads the last HttpMethodMetadata, so appending wins.
+        builder.Finally(endpoint =>
+        {
+            var methods = endpoint.Metadata.OfType<HttpMethodMetadata>().LastOrDefault();
+
+            if (methods is null
+                || !methods.HttpMethods.Contains(HttpMethods.Get)
+                || methods.HttpMethods.Contains(HttpMethods.Head))
+            {
+                return;
+            }
+
+            endpoint.Metadata.Add(new HttpMethodMetadata([.. methods.HttpMethods, HttpMethods.Head]));
+        });
+
+        return builder;
+    }
+
     public static IEndpointRouteBuilder MapOpds(this IEndpointRouteBuilder builder)
     {
         // OPDS 1.2 — what ereaders actually implement.
         var atom = builder.MapGroup(OpdsUrls.AtomPrefix)
             .RequireAuthorization(AuthPolicies.ReadCatalog)
+            .AlsoAnswerHead()
             .WithTags("OPDS");
 
         // OPDS 2.0 — where things are going. Mapped first so "/opds/v2" is not swallowed
         // by the 1.2 group's routes.
         var json = builder.MapGroup(OpdsUrls.JsonPrefix)
             .RequireAuthorization(AuthPolicies.ReadCatalog)
+            .AlsoAnswerHead()
             .WithTags("OPDS 2.0");
 
         MapTree(atom, OpdsUrls.Atom, json: false);
@@ -54,6 +102,21 @@ public static class OpdsEndpoints
             ImageAsync(id, catalog, library, ct));
         atom.MapGet("/thumb/{id:guid}", (Guid id, CatalogService catalog, LibraryStore library, CancellationToken ct) =>
             ImageAsync(id, catalog, library, ct));
+
+        // Reading positions. Kosync-shaped bodies (snake_case, `document` either the URN
+        // the feed emits or the bare book id) so the reader-side client stays dumb.
+        atom.MapPut("/syncs/progress", async (
+            ProgressPayload payload,
+            ClaimsPrincipal user,
+            ReadProgressService progress,
+            CancellationToken ct) =>
+            await ProgressPutAsync(payload, user, progress, ct));
+        atom.MapGet("/syncs/progress/{document}", async (
+            string document,
+            ClaimsPrincipal user,
+            ReadProgressService progress,
+            CancellationToken ct) =>
+            await ProgressGetAsync(document, user, progress, ct));
 
         return builder;
     }
@@ -374,5 +437,102 @@ public static class OpdsEndpoints
             lastModified: info.LastWriteTimeUtc,
             entityTag: null,
             enableRangeProcessing: false);
+    }
+
+    // ------------------------------------------------------------ reading progress
+
+    /// <summary>What a reader PUTs. Kosync-shaped; snake_case names are what its client sends.</summary>
+    /// <remarks>
+    /// Every property carries an explicit <see cref="JsonPropertyNameAttribute"/> because
+    /// ASP.NET Core's default JSON options bind case-insensitively but not across
+    /// underscores: <c>device_id</c> would silently deserialize to null.
+    /// </remarks>
+    public sealed record ProgressPayload(
+        [property: JsonPropertyName("document")] string? Document,
+        [property: JsonPropertyName("progress")] string? Progress,
+        [property: JsonPropertyName("percentage")] double? Percentage,
+        [property: JsonPropertyName("device")] string? Device,
+        [property: JsonPropertyName("device_id")] string? DeviceId);
+
+    /// <summary>What a reader GETs back, with the server timestamp of the position.</summary>
+    private static object ProgressResult(ReadProgressEntity row) => new
+    {
+        document = $"urn:bindery:book:{row.BookId:N}",
+        progress = row.Progress,
+        percentage = row.Percentage,
+        device = row.Device,
+        device_id = row.DeviceId,
+        timestamp = row.UpdatedAt.ToUnixTimeSeconds(),
+    };
+
+    /// <summary>
+    /// Accepts the document reference the feed emits (<c>urn:bindery:book:{N}</c>) or the
+    /// bare id in either textual case. Anything else is a 404, not an exception: readers
+    /// will happily point at some other catalog's documents.
+    /// </summary>
+    private static bool TryParseDocument(string? document, out Guid bookId)
+    {
+        bookId = Guid.Empty;
+
+        if (string.IsNullOrWhiteSpace(document))
+        {
+            return false;
+        }
+
+        var candidate = document.StartsWith("urn:bindery:book:", StringComparison.OrdinalIgnoreCase)
+            ? document["urn:bindery:book:".Length..]
+            : document;
+
+        // Both the N format (no dashes) and the dashed form parse; feeds emit N.
+        return Guid.TryParseExact(candidate, "N", out bookId)
+            || Guid.TryParse(candidate, out bookId);
+    }
+
+    /// <summary>The token that authenticated the request, or <see cref="Guid.Empty"/> for
+    /// the development principal, which has no token row at all.</summary>
+    private static Guid TokenIdOf(ClaimsPrincipal user) =>
+        Guid.TryParse(user.FindFirstValue(BinderyClaims.TokenId), out var tokenId)
+            ? tokenId
+            : Guid.Empty;
+
+    private static async Task<IResult> ProgressPutAsync(
+        ProgressPayload payload,
+        ClaimsPrincipal user,
+        ReadProgressService progress,
+        CancellationToken ct)
+    {
+        if (payload is null
+            || !TryParseDocument(payload.Document, out var bookId)
+            || string.IsNullOrWhiteSpace(payload.Progress))
+        {
+            return Results.BadRequest();
+        }
+
+        var row = await progress.UpsertAsync(
+            bookId,
+            TokenIdOf(user),
+            payload.Progress,
+            payload.Percentage,
+            payload.Device,
+            payload.DeviceId,
+            ct);
+
+        return row is null ? Results.NotFound() : Results.Ok(ProgressResult(row));
+    }
+
+    private static async Task<IResult> ProgressGetAsync(
+        string document,
+        ClaimsPrincipal user,
+        ReadProgressService progress,
+        CancellationToken ct)
+    {
+        if (!TryParseDocument(document, out var bookId))
+        {
+            return Results.NotFound();
+        }
+
+        var row = await progress.GetAsync(bookId, TokenIdOf(user), ct);
+
+        return row is null ? Results.NotFound() : Results.Ok(ProgressResult(row));
     }
 }

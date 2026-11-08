@@ -47,24 +47,7 @@
         <div class="book-register">
             @foreach (var book in Model.Books.Items)
             {
-                <a class="book-row" asp-page="/Book" asp-route-id="@book.Id">
-                    <span class="book-sequence">@book.Added.ToString("MM.dd")</span>
-                    <span class="book-title">
-                        <strong>@book.Title</strong>
-                        <small>@book.AuthorLine</small>
-                    </span>
-                    <span class="book-meta">
-                        @if (book.Series.HasValue())
-                        {
-                            @book.Series.Value.Name
-                        }
-                        else if (book.Files.AsList().Count > 0)
-                        {
-                            @book.Files.AsList()[0].Format.ToUpperInvariant()
-                        }
-                    </span>
-                    <span class="row-arrow" aria-hidden="true">›</span>
-                </a>
+                <partial name="_BookRow" model="book" />
             }
         </div>
 
