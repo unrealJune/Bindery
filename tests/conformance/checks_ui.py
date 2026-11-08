@@ -1,8 +1,17 @@
 """Plugin UI conformance checks — docs/PLUGIN-UI.md.
 
-These run only for plugins declaring ui.mode of 'fragment' or 'iframe'. The fragment
-checks are the load-bearing ones: a fragment plugin that ships JavaScript, emits relative
-URLs, or reflects input raw is a plugin whose HTML the host cannot safely host.
+These run only for plugins declaring a UI tier. Two tiers are checked, and what makes a
+plugin conformant differs sharply between them:
+
+`sandboxed` (recommended) — the plugin serves a complete document into an opaque-origin
+iframe. It may ship whatever JavaScript it likes, so there is nothing to forbid. What is
+checked instead is that it will actually *work* inside the frame's CSP: no `fetch`, no
+third-party subresources, and content types the proxy will forward.
+
+`fragment` (deprecated) — the plugin's markup is inlined into Bindery's own origin. These
+checks are the load-bearing ones and remain a merge gate: a fragment plugin that ships
+JavaScript, emits relative URLs, or reflects input raw is a plugin whose HTML the host
+cannot safely host.
 """
 
 from __future__ import annotations
@@ -16,6 +25,7 @@ from harness import Ctx, Fail, Skip, check, expect, expect_status
 
 BASE = "/plugins/{name}/ui"
 MAX_FRAGMENT_BYTES = 512 * 1024
+MAX_SANDBOXED_BYTES = 4 * 1024 * 1024
 
 DOCUMENT_MARKERS = ("<!doctype", "<html", "<head", "<body", "</html>", "</body>")
 SCRIPT_RE = re.compile(r"<\s*script", re.I)
@@ -27,6 +37,28 @@ URL_ATTR_RE = re.compile(
     r"""\b(href|action|hx-get|hx-post|hx-put|hx-patch|hx-delete)\s*=\s*(?:"([^"]*)"|'([^']*)')""",
     re.I,
 )
+
+# What the frame's `connect-src 'none'` makes impossible. A plugin reaching for any of
+# these is one that will fail at runtime, so it is caught here instead.
+EGRESS_RE = re.compile(
+    r"""\b(?:fetch\s*\(|XMLHttpRequest|EventSource|WebSocket|navigator\.sendBeacon)""")
+SUBRESOURCE_RE = re.compile(
+    r"""\b(?:src|href)\s*=\s*(?:"([^"]*)"|'([^']*)')""", re.I)
+
+# The proxy's allowlist, from PLUGIN-PROTOCOL.md §6.1.
+SANDBOXED_TYPES = {
+    "text/html", "text/css", "text/javascript", "application/javascript",
+    "application/json", "text/plain", "image/svg+xml", "text/event-stream",
+}
+
+
+def _allowed_sandboxed_type(media_type: str) -> bool:
+    media_type = (media_type or "").lower()
+    return (
+        media_type in SANDBOXED_TYPES
+        or media_type.startswith("image/")
+        or media_type.startswith("font/")
+    )
 
 
 TAG_RE = re.compile(r"<[a-zA-Z!/][^>]*>", re.S)
@@ -57,6 +89,11 @@ def _is_fragment_plugin(ctx: Ctx) -> bool:
     return ctx.ui_mode == "fragment"
 
 
+def _is_sandboxed_plugin(ctx: Ctx) -> bool:
+    # 'iframe' was the tier's name before it was built; the host accepts it as an alias.
+    return ctx.ui_mode in ("sandboxed", "iframe")
+
+
 def _base(ctx: Ctx) -> str:
     return BASE.format(name=ctx.manifest.get("name", "plugin"))
 
@@ -83,6 +120,16 @@ def _get_fragment(ctx: Ctx, path: str, *, query: str = "", expect_html: bool = T
             f"{url}: the proxy forwards text/html only, got {resp.content_type!r}",
         )
     return resp
+
+
+def _entry_paths(ctx: Ctx) -> list:
+    """Every UI path the host might load: the declared entry plus every nav path."""
+    ui = ctx.manifest.get("ui") or {}
+    paths = [ui.get("entry") or "/"]
+    for path in _nav_paths(ctx):
+        if path not in paths:
+            paths.append(path)
+    return paths
 
 
 @check("ui.nav-paths-resolve", group="ui", requires=_is_fragment_plugin)
@@ -229,15 +276,119 @@ def ui_no_raw_reflection(ctx: Ctx) -> None:
         raise Fail("; ".join(sorted(set(offenders))[:5]))
 
 
-@check("ui.iframe-serves-document", group="ui", requires=lambda ctx: ctx.ui_mode == "iframe")
-def ui_iframe_serves_document(ctx: Ctx) -> None:
-    """An iframe-mode plugin serves complete documents, since nothing wraps them."""
-    paths = _nav_paths(ctx)
-    if not paths:
-        raise Skip("plugin declares no ui.nav entries")
-    for path in paths:
+@check("ui.sandboxed-serves-document", group="ui", requires=_is_sandboxed_plugin)
+def ui_sandboxed_serves_document(ctx: Ctx) -> None:
+    """A sandboxed plugin serves complete documents, since nothing wraps them."""
+    for path in _entry_paths(ctx):
         body = _get_fragment(ctx, path).text.lower()
-        expect("<html" in body, f"{path}: iframe-mode plugins serve a full document")
+        expect("<html" in body, f"{path}: sandboxed plugins serve a full document, not a fragment")
+        expect("<body" in body, f"{path}: sandboxed document has no <body>")
+
+
+@check("ui.sandboxed-content-types", group="ui", requires=_is_sandboxed_plugin)
+def ui_sandboxed_content_types(ctx: Ctx) -> None:
+    """Every response, including subresources, is a type the proxy will forward."""
+    for path in _entry_paths(ctx):
+        resp = _get_fragment(ctx, path, expect_html=False)
+        expect(
+            _allowed_sandboxed_type(resp.content_type),
+            f"{path}: content type {resp.content_type!r} is outside the proxy's allowlist "
+            "(PLUGIN-PROTOCOL.md §6.1) and will be refused, not forwarded",
+        )
+        for sub in _subresources(ctx, resp.text):
+            sub_resp = ctx.client.request(
+                "GET",
+                f"/bindery/v1/ui{sub}",
+                headers={"X-Bindery-Base": _base(ctx)},
+                timeout=15,
+            )
+            if sub_resp.status != 200:
+                continue
+            expect(
+                _allowed_sandboxed_type(sub_resp.content_type),
+                f"{sub}: subresource content type {sub_resp.content_type!r} is outside the "
+                "proxy's allowlist and will not be forwarded",
+            )
+
+
+@check("ui.sandboxed-size-capped", group="ui", requires=_is_sandboxed_plugin)
+def ui_sandboxed_size_capped(ctx: Ctx) -> None:
+    """No sandboxed response exceeds the host's 4 MiB cap."""
+    for path in _entry_paths(ctx):
+        resp = _get_fragment(ctx, path, expect_html=False)
+        expect(
+            len(resp.body) <= MAX_SANDBOXED_BYTES,
+            f"{path}: response is {len(resp.body)} bytes; the host refuses above {MAX_SANDBOXED_BYTES}",
+        )
+
+
+@check("ui.sandboxed-uses-the-bridge", group="ui", requires=_is_sandboxed_plugin)
+def ui_sandboxed_uses_the_bridge(ctx: Ctx) -> None:
+    """No plugin code reaches for network egress the frame's CSP removes.
+
+    `connect-src 'none'` means fetch, XMLHttpRequest, EventSource, WebSocket, and
+    sendBeacon all fail inside the frame. A plugin depending on any of them is broken at
+    runtime in a way that is much cheaper to catch here — the postMessage bridge in
+    PLUGIN-UI.md §4 is the only way out.
+    """
+    offenders = []
+    for path in _entry_paths(ctx):
+        resp = _get_fragment(ctx, path, expect_html=False)
+        sources = [(path, resp.text)]
+        for sub in _subresources(ctx, resp.text):
+            sub_resp = ctx.client.request(
+                "GET",
+                f"/bindery/v1/ui{sub}",
+                headers={"X-Bindery-Base": _base(ctx)},
+                timeout=15,
+            )
+            if sub_resp.status == 200:
+                sources.append((sub, sub_resp.text))
+        for where, text in sources:
+            match = EGRESS_RE.search(text)
+            if match:
+                offenders.append(f"{where}: uses {match.group(0)!r}, which connect-src 'none' blocks")
+    if offenders:
+        raise Fail("; ".join(sorted(set(offenders))[:5]))
+
+
+@check("ui.sandboxed-no-third-party-subresources", group="ui", requires=_is_sandboxed_plugin)
+def ui_sandboxed_no_third_party_subresources(ctx: Ctx) -> None:
+    """Subresources come from the plugin's own mount point, which is all CSP permits."""
+    offenders = []
+    for path in _entry_paths(ctx):
+        body = _get_fragment(ctx, path, expect_html=False).text
+        for match in SUBRESOURCE_RE.finditer(body):
+            value = (match.group(1) if match.group(1) is not None else match.group(2)).strip()
+            if value.startswith(("http://", "https://", "//")):
+                offenders.append(f"{path}: {value!r} is off-origin and will be blocked by the frame's CSP")
+    if offenders:
+        raise Fail("; ".join(sorted(set(offenders))[:5]))
+
+
+def _subresources(ctx: Ctx, body: str) -> list:
+    """Plugin-served script/style/image paths, mapped back to /bindery/v1/ui paths.
+
+    Both spellings are accepted: a document loaded at its mount point may use ordinary
+    relative URLs, and one built from X-Bindery-Base will carry the prefix.
+    """
+    base = _base(ctx)
+    found = []
+    for match in SUBRESOURCE_RE.finditer(body):
+        value = (match.group(1) if match.group(1) is not None else match.group(2)).strip()
+        if not value or value.startswith(("http://", "https://", "//", "data:", "#", "mailto:")):
+            continue
+        if value.startswith(base):
+            path = value[len(base):] or "/"
+        elif value.startswith("/"):
+            continue  # some other part of Bindery, e.g. /css/bindery.css — not the plugin's
+        else:
+            path = "/" + value
+        if ".." in path:
+            continue
+        if path not in found:
+            found.append(path)
+    return found
 
 
 @check("ui.absent-when-declarative", group="ui", requires=lambda ctx: ctx.ui_mode == "declarative")

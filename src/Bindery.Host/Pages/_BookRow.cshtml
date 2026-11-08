@@ -1,0 +1,28 @@
+@model Bindery.Core.Domain.Book
+@inject Bindery.Host.Ui.SourceLabels Sources
+@*
+    One register row, shared by Intake's "recently filed" and the full register, so the
+    columns cannot drift apart between the two places a book is listed.
+*@
+@{
+    var files = Model.Files.AsList();
+
+    var meta = Model.Series.HasValue()
+        ? Model.Series.Value.Name
+        : files.Count > 0 ? files[0].Format.ToUpperInvariant() : string.Empty;
+
+    var manual = Sources.IsManual(Model.SourcePlugin.OrNull());
+}
+<a class="book-row" asp-page="/Book" asp-route-id="@Model.Id">
+    <span class="book-sequence">@Model.Added.ToString("MM.dd")</span>
+    <span class="book-title">
+        <strong>@Model.Title</strong>
+        <small>@Model.AuthorLine</small>
+    </span>
+    <span class="book-meta">@meta</span>
+    @* Which downloader filed this. "Manual" covers an upload and a hand-copied file alike. *@
+    <span class="book-source">
+        <span class="source-badge @(manual ? "source-badge-manual" : null)">@Sources.For(Model.SourcePlugin)</span>
+    </span>
+    <span class="row-arrow" aria-hidden="true">›</span>
+</a>

@@ -33,3 +33,24 @@ spec:
   storageClassName: {{ . | quote }}
   {{- end }}
 {{- end }}
+{{- range $plugin := .Values.plugins }}
+{{- $persistence := default dict $plugin.persistence }}
+{{- if and $plugin.enabled (eq $plugin.mode "sidecar") $persistence.enabled (not $persistence.existingClaim) }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "bindery.pluginWorkClaimName" (dict "root" $ "plugin" $plugin) }}
+  labels:
+    {{- include "bindery.labels" $ | nindent 4 }}
+spec:
+  accessModes:
+    {{- toYaml (default (list "ReadWriteOnce") $persistence.accessModes) | nindent 4 }}
+  resources:
+    requests:
+      storage: {{ default "1Gi" $persistence.size | quote }}
+  {{- with $persistence.storageClass }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+{{- end }}
+{{- end }}

@@ -124,25 +124,7 @@ public sealed class PluginActionService(
 
         // The same validator the settings form uses: an action's input is declared with
         // exactly the same field schema, so it gets exactly the same checks.
-        return PluginSettingsStore.Validate(
-            new Protocol.Manifest(
-                Protocol.ProtocolVersion,
-                "action",
-                "action",
-                "0",
-                Microsoft.FSharp.Core.FSharpOption<string>.None,
-                Microsoft.FSharp.Core.FSharpOption<string>.None,
-                0,
-                Microsoft.FSharp.Collections.FSharpList<string>.Empty,
-                Microsoft.FSharp.Collections.FSharpList<string>.Empty,
-                Protocol.Capabilities.Default,
-                action.Input,
-                Microsoft.FSharp.Collections.FSharpList<Protocol.PluginAction>.Empty,
-                new Protocol.PluginUi(
-                    Protocol.UiMode.Declarative,
-                    Microsoft.FSharp.Collections.FSharpList<Protocol.NavEntry>.Empty)),
-            submitted!,
-            new HashSet<string>());
+        return PluginSettingsStore.ValidateFields(action.Input, submitted!, new HashSet<string>());
     }
 
     private static ActionResult Failure(string message) =>

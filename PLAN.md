@@ -178,44 +178,42 @@ plugin HTML.
 
 Every plugin gets this for free whether or not it also ships HTML.
 
-### Tier 2 — `fragment` (HTML passthrough) — **in v1**
+### Tier 2 — `sandboxed` (the plugin's own document) — **in v1**
 
-Real HTML, server-rendered by the plugin, swapped into the Bindery shell by htmx.
+A complete HTML document, served by the plugin into an iframe with an opaque origin.
 Full contract in [`docs/PLUGIN-UI.md`](docs/PLUGIN-UI.md).
 
-- Plugin serves `GET|POST /bindery/v1/ui/*` returning **HTML fragments** — not full pages.
-- Bindery reverse-proxies `/plugins/{name}/ui/{**rest}` to the plugin, forwarding method,
-  query, and body, and htmx swaps the response into the page. Bindery owns the chrome, nav,
-  and CSS; the fragment inherits it.
-- **No URL-rewriting magic.** Bindery sends `X-Bindery-Base: /plugins/fanficfare/ui` on
-  every proxied request and the plugin emits absolute URLs built from it. Rewriting
-  `hx-get`/`href`/`action` attributes server-side is the kind of clever that breaks at 2am.
-- Bindery publishes its CSS custom properties as documented design tokens so fragments look
-  native without shipping their own stylesheet.
+- Plugin serves `GET|POST /bindery/v1/ui/*` returning **full documents** plus its own
+  subresources (`app.js`, `style.css`). The proxy is a byte pipe with a content-type
+  allowlist and a size cap; it does not sanitize or rewrite anything.
+- Bindery loads it into `<iframe sandbox="allow-scripts allow-forms allow-popups
+  allow-downloads">` — note the absent `allow-same-origin`. That single omission is what
+  assigns the document an opaque origin.
+- **The plugin may ship whatever JavaScript it likes.** It cannot read Bindery's cookies,
+  DOM, or storage, and `connect-src 'none'` removes `fetch`/XHR/WebSocket entirely.
+- All host communication goes through a typed `postMessage` bridge: `request`/`response`
+  scoped to the plugin's own mount point, plus `resize`, `ready`, `notify`, `navigate`.
+  Bindery attaches the CSRF token; the plugin is never given it and so cannot leak it.
+- Bindery's stylesheet is public API, so a plugin can link `/css/bindery.css` and inherit
+  light/dark mode.
 
-**The load-bearing constraint: a `fragment` plugin ships no JavaScript.** Not inline, not
-`<script src>`, not `on*`, not `javascript:`. It doesn't need to — Bindery's htmx runtime is
-already in the shell and `hx-*` passes the sanitizer, so plugin HTML still gets async forms,
-polling, SSE progress, inline validation, and lazy loading. That is every plugin UI anyone
-actually builds. A plugin that truly needs its own JS uses Tier 3, and pays for it in
-isolation rather than smuggling the risk in.
+**Why this shape rather than sanitizing markup into Bindery's origin:** a fragment carries
+content *and* authority in one blob, and a sanitizer is the allowlist parser that tries to
+separate them — on every input, forever, without ever being wrong. Isolating instead means
+there is no authority in reach for injected script to abuse, so nothing has to be perfect.
+The security-critical surface becomes a ~100-line bridge with a five-item allowlist instead
+of a 14 KB HTML parser, and the browser enforces the boundary rather than a regex.
 
-**The security cost, stated plainly:** plugin HTML rendered in Bindery's origin is stored
-XSS by construction. Three layers, all required: a maintained allowlist sanitizer
-(`HtmlSanitizer`/AngleSharp — not hand-rolled), a strict CSP with no `unsafe-inline`, and
-antiforgery tokens injected on the wrapper via `hx-headers` so the plugin can't get CSRF
-wrong. Note the trust escalation: a downloader that returns EPUBs never touches your session
-cookie. HTML injected into your origin does. Same plugin, different threat.
+### Tier 3 — `fragment` (deprecated)
 
-### Tier 3 — `iframe` (escape hatch)
+HTML fragments swapped into the Bindery shell by htmx, sanitized on arrival. Still
+supported, still enforced — a `fragment` plugin ships no JavaScript, no CSS, and builds
+every URL from `X-Bindery-Base` — and the XSS conformance corpus remains a merge gate. The
+reference FanFicFare plugin still uses it.
 
-For a plugin that genuinely needs its own JavaScript. Served into a `sandbox="allow-forms"`
-iframe with **no** `allow-same-origin`, ideally on a distinct origin. Plugin ships whatever
-it likes; it simply cannot reach Bindery's DOM, cookies, or storage.
-
-The plugin opts in via the manifest, so Bindery knows to isolate rather than sanitize. Costs
-you: awkward auto-sizing, no htmx interop with the parent, and styling that won't match
-unless the plugin pulls Bindery's stylesheet.
+Deprecated because its safety rests on the sanitizer being perfect and `sandboxed` does not
+need anything to be perfect. Removing it would be a breaking change and a `protocolVersion`
+bump; that is a later decision, not a side effect of adding Tier 2.
 
 ### Build order
 
@@ -302,15 +300,40 @@ running Bindery at all.
 
 ## 10. Explicitly out of scope for v1
 
-Update scheduler (re-fetch for new chapters) · watch folder / bulk import · read-progress
-sync · multi-user libraries · calibre-style metadata editing · full-text search ·
-plugin marketplace or registry.
+Watch folder / bulk import · read-progress sync · multi-user libraries · calibre-style
+metadata editing · full-text search · plugin marketplace or registry.
 
-The update scheduler is the strongest candidate for v1.1 — for ongoing fanfic it is
-arguably the point — but it needs per-book source tracking to be solid first, and that's
-what phase 3 builds.
+Depositing *one* file through the UI is in — it is the same filing path a download ends in,
+minus the plugin — and so is withdrawing a book. What stays out is the unattended half: a
+watched directory, a bulk import, and editing a filed book's metadata after the fact.
 
----
+**The update scheduler has since shipped.** It was the strongest candidate for v1.1 — for
+ongoing fanfic it is arguably the point — and it was waiting on per-book source tracking,
+which phase 3 delivered. `Downloads/UpdateScheduler.cs` now sweeps books whose most recent
+job has aged past `Bindery:Updates:Interval` and queues the same update the book page's
+manual refresh does. "Last checked" is derived from the Jobs table, so it needed no schema.
+
+Polling alone cannot see a source that moves out of band — a chat bot handed a file, say —
+so protocol §3.7 lets a plugin POST a contentless hint and have Bindery decide whether to
+queue early. The schedule remains the backstop: every notification could be dropped and
+books would still converge, just later. That is what keeps the one host-served endpoint an
+optimization rather than a correctness dependency.
+
+**Read-progress sync has since shipped**, via the OPDS Plus KOReader plugin fork rather
+than a Bindery-native feature: the host gained `/opds/syncs/progress` PUT/GET under the
+catalog policy (kosync-shaped bodies, per-feed-token isolation in a `ReadProgress` table —
+migration `20261014185256_AddReadProgress`), and the fork's reader pushes/pulls from the
+reading view. The host stays sync-agnostic: it stores positions keyed by (book, feed token)
+and answers GETs; everything kosync knows about devices, debouncing, and direction
+strategies lives in the client.
+
+**Library circulation has since shipped** (protocol §3.8, `docs/CIRCULATION.md`). A plugin
+may declare `capabilities.circulation` and serve search, holds, and a per-account snapshot;
+the host owns per-person accounts (secrets encrypted), the hold/loan lifecycle as a pure F#
+reconcile function, and a notification subsystem with an outbox and an SMTP channel that
+downloads use too. The reference consumer is `plugins/bibliocommons` (Seattle Public Library,
+KCLS). This is the first per-person data in Bindery; the book library itself stays shared.
+Migration `AddCirculationAndNotifications` is additive and touches no book table.
 
 ## 11. Known risks
 

@@ -210,6 +210,13 @@ public sealed class LibraryStore(IOptions<BinderyOptions> options, ILogger<Libra
     {
         var absolute = Resolve(directory);
 
+        // Resolve("") is the library root, and a recursive delete of that is the whole
+        // library. A row with no directory is a bug elsewhere; it must not become one here.
+        if (absolute == Path.GetFullPath(Root))
+        {
+            throw new InvalidOperationException("refusing to delete the library root");
+        }
+
         if (Directory.Exists(absolute))
         {
             Directory.Delete(absolute, recursive: true);

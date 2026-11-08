@@ -1,0 +1,752 @@
+{
+ "catalogSearch": {
+  "searchType": "keyword",
+  "query": "dune",
+  "pagination": {
+   "count": 475,
+   "limit": 25,
+   "page": 1,
+   "pages": 19,
+   "pageForSolr": 0
+  },
+  "results": [
+   {
+    "representative": "S246C1354725",
+    "manifestations": [
+     "S246C1354725"
+    ]
+   },
+   {
+    "representative": "S246C582035",
+    "manifestations": [
+     "S246C582035"
+    ]
+   },
+   {
+    "representative": "S246C1187916",
+    "manifestations": [
+     "S246C1187916"
+    ]
+   },
+   {
+    "representative": "S246C1185296",
+    "manifestations": [
+     "S246C1185296"
+    ]
+   },
+   {
+    "representative": "S246C735909",
+    "manifestations": [
+     "S246C735909"
+    ]
+   }
+  ],
+  "fields": [
+   {
+    "id": "STATUS",
+    "hasMore": true,
+    "fieldFilters": [
+     {
+      "value": "_online_",
+      "groupIds": [],
+      "label": "_online_",
+      "count": 184,
+      "applied": false
+     },
+     {
+      "value": "_physical_",
+      "groupIds": [],
+      "label": "_physical_",
+      "count": 349,
+      "applied": false
+     },
+     {
+      "value": "4",
+      "groupIds": [],
+      "label": "Ballard Branch",
+      "count": 12,
+      "applied": false
+     },
+     {
+      "value": "6",
+      "groupIds": [],
+      "label": "Beacon Hill Branch",
+      "count": 13,
+      "applied": false
+     },
+     {
+      "value": "8",
+      "groupIds": [],
+      "label": "Broadview Branch",
+      "count": 16,
+      "applied": false
+     },
+     {
+      "value": "10",
+      "groupIds": [],
+      "label": "Capitol Hill Branch",
+      "count": 13,
+      "applied": false
+     },
+     {
+      "value": "3",
+      "groupIds": [],
+      "label": "Central Library",
+      "count": 172,
+      "applied": false
+     },
+     {
+      "value": "11",
+      "groupIds": [],
+      "label": "Columbia Branch",
+      "count": 4,
+      "applied": false
+     },
+     {
+      "value": "12",
+      "groupIds": [],
+      "label": "Delridge Branch",
+      "count": 2,
+      "applied": false
+     },
+     {
+      "value": "41",
+      "groupIds": [],
+      "label": "Digital Resources",
+      "count": 140,
+      "applied": false
+     },
+     {
+      "value": "13",
+      "groupIds": [],
+      "label": "Douglass-Truth Branch",
+      "count": 7,
+      "applied": false
+     },
+     {
+      "value": "15",
+      "groupIds": [],
+      "label": "Green Lake Branch",
+      "count": 3,
+      "applied": false
+     },
+     {
+      "value": "16",
+      "groupIds": [],
+      "label": "Greenwood Branch",
+      "count": 13,
+      "applied": false
+     },
+     {
+      "value": "17",
+      "groupIds": [],
+      "label": "High Point Branch",
+      "count": 2,
+      "applied": false
+     },
+     {
+      "value": "19",
+      "groupIds": [],
+      "label": "International District/Chinatown Branch",
+      "count": 2,
+      "applied": false
+     },
+     {
+      "value": "20",
+      "groupIds": [],
+      "label": "Lake City Branch",
+      "count": 15,
+      "applied": false
+     },
+     {
+      "value": "21",
+      "groupIds": [],
+      "label": "Madrona-Sally Goldmark Branch",
+      "count": 3,
+      "applied": false
+     },
+     {
+      "value": "22",
+      "groupIds": [],
+      "label": "Magnolia Branch",
+      "count": 5,
+      "applied": false
+     },
+     {
+      "value": "23",
+      "groupIds": [],
+      "label": "Montlake Branch",
+      "count": 3,
+      "applied": false
+     },
+     {
+      "value": "25",
+      "groupIds": [],
+      "label": "NewHolly Branch",
+      "count": 5,
+      "applied": false
+     },
+     {
+      "value": "26",
+      "groupIds": [],
+      "label": "Northeast Branch",
+      "count": 20,
+      "applied": false
+     },
+     {
+      "value": "28",
+      "groupIds": [],
+      "label": "Northgate Branch",
+      "count": 7,
+      "applied": false
+     },
+     {
+      "value": "29",
+      "groupIds": [],
+      "label": "Queen Anne Branch",
+      "count": 9,
+      "applied": false
+     },
+     {
+      "value": "30",
+      "groupIds": [],
+      "label": "Rainier Beach Branch",
+      "count": 14,
+      "applied": false
+     },
+     {
+      "value": "32",
+      "groupIds": [],
+      "label": "South Park Branch",
+      "count": 2,
+      "applied": false
+     },
+     {
+      "value": "33",
+      "groupIds": [],
+      "label": "Southwest Branch",
+      "count": 14,
+      "applied": false
+     },
+     {
+      "value": "35",
+      "groupIds": [],
+      "label": "Wallingford Branch",
+      "count": 1,
+      "applied": false
+     }
+    ]
+   }
+  ]
+ },
+ "entities": {
+  "bibs": {
+   "S246C1354725": {
+    "id": "S246C1354725",
+    "sourceLibId": 246,
+    "briefInfo": {
+     "metadataId": "S246C1354725",
+     "title": "Dune Messiah",
+     "subtitle": "",
+     "format": "BK",
+     "superFormats": [
+      "BOOKS",
+      "MODERN_FORMATS"
+     ],
+     "consumptionFormat": "READ",
+     "callNumber": "SCI-FIC HERBERT 2020",
+     "authors": [
+      "Herbert, Frank"
+     ],
+     "publicationDate": "2020",
+     "jacket": {
+      "type": "SYNDETICS",
+      "small": "https://secure.syndetics.com/index.aspx?isbn=9780593201732/SC.GIF&client=sepup&type=xw12&oclc=",
+      "medium": "https://secure.syndetics.com/index.aspx?isbn=9780593201732/MC.GIF&client=sepup&type=xw12&oclc=",
+      "large": "https://secure.syndetics.com/index.aspx?isbn=9780593201732/LC.JPG&client=sepup&type=xw12&oclc=",
+      "local_url": null
+     },
+     "isbns": [
+      "9780593201732",
+      "0593201736"
+     ],
+     "primaryLanguage": "eng",
+     "series": [
+      {
+       "name": "Dune chronicles",
+       "volume": "bk. 2.",
+       "sortName": "dune chronicles",
+       "volumeNumber": 2
+      },
+      {
+       "name": "The Dune chronicles ",
+       "volume": "book two",
+       "sortName": "dune chronicles",
+       "volumeNumber": "NaN"
+      }
+     ],
+     "edition": "Ace trade paperback edition.",
+     "multiscriptTitle": null,
+     "multiscriptAuthor": null,
+     "contentType": "FICTION",
+     "audiences": [
+      "ADULT"
+     ],
+     "groupKey": "dune_messiah\ufffdherbert_frank\ufffdtext_eng",
+     "id": "S246C1354725",
+     "rating": {
+      "averageRating": 78,
+      "totalCount": 633
+     }
+    },
+    "policy": {
+     "materialType": "PHYSICAL",
+     "provider": "ILS",
+     "holdable": true,
+     "itemLevelHoldableItems": false,
+     "materialPolicy": {
+      "supportsBatchVolumeHolds": false,
+      "itemLevelHoldsPredetermined": true,
+      "requiresDuration": false,
+      "requiresEmailDuringHold": false,
+      "requiresFormatDuringHold": false,
+      "requiresFormatDuringCheckout": false,
+      "supportsDownload": false,
+      "supportsFastAvailability": false,
+      "supportsReadNow": false,
+      "showFormatDuringHold": false,
+      "showFormatDuringCheckout": false,
+      "supportsSuspendHold": false,
+      "supportsSuspendHoldStartDateEdit": false,
+      "supportsSuspendHoldEndDateEdit": true,
+      "showQuickstartLink": false,
+      "supportsBorrowingHistory": true,
+      "borrowingHistorySupportsReturnedDates": false,
+      "maintainsBorrowingHistoryOnDisable": false,
+      "supportsCancelledExpiredHolds": true,
+      "helpUrl": null,
+      "quickStartUrl": null,
+      "externalAPI": false,
+      "healthy": true
+     }
+    },
+    "availability": {
+     "metadataId": "S246C1354725",
+     "bibType": "PHYSICAL",
+     "availabilityLocationType": "NA",
+     "status": "UNAVAILABLE",
+     "circulationType": "REQUEST",
+     "libraryUseOnly": false,
+     "heldCopies": 24,
+     "availableCopies": 0,
+     "totalCopies": 12,
+     "onOrderCopies": 0,
+     "volumesCount": 0,
+     "localisedStatus": "UNAVAILABLE",
+     "eresourceDescription": null,
+     "eresourceUrl": null,
+     "singleBranch": false,
+     "statusType": "UNAVAILABLE"
+    }
+   },
+   "S246C582035": {
+    "id": "S246C582035",
+    "sourceLibId": 246,
+    "briefInfo": {
+     "metadataId": "S246C582035",
+     "title": "Dune",
+     "subtitle": "",
+     "format": "EBOOK",
+     "superFormats": [
+      "BOOKS",
+      "ELECTRONIC_FORMATS"
+     ],
+     "consumptionFormat": "READ",
+     "callNumber": "EBOOK OVERDRIVE",
+     "authors": [
+      "Herbert, Frank"
+     ],
+     "publicationDate": "1990",
+     "jacket": {
+      "type": "SYNDETICS",
+      "small": "https://secure.syndetics.com/index.aspx?isbn=9781101658055/SC.GIF&client=sepup&type=xw12&oclc=",
+      "medium": "https://secure.syndetics.com/index.aspx?isbn=9781101658055/MC.GIF&client=sepup&type=xw12&oclc=",
+      "large": "https://secure.syndetics.com/index.aspx?isbn=9781101658055/LC.JPG&client=sepup&type=xw12&oclc=",
+      "local_url": null
+     },
+     "isbns": [
+      "9781101658055",
+      "1101658053"
+     ],
+     "primaryLanguage": "eng",
+     "series": [
+      {
+       "name": "Dune chronicles",
+       "volume": "bk. 1.",
+       "sortName": "dune chronicles",
+       "volumeNumber": 1
+      }
+     ],
+     "edition": "Special twenty-fifth anniversary edition.",
+     "multiscriptTitle": null,
+     "multiscriptAuthor": null,
+     "contentType": "FICTION",
+     "audiences": [
+      "ADULT",
+      "JUVENILE"
+     ],
+     "groupKey": "dune\ufffdherbert_frank\ufffdtext_eng",
+     "id": "S246C582035",
+     "rating": {
+      "averageRating": 86,
+      "totalCount": 2056
+     }
+    },
+    "policy": {
+     "materialType": "DIGITAL",
+     "provider": "OverDriveAPI",
+     "holdable": true,
+     "itemLevelHoldableItems": false,
+     "materialPolicy": {
+      "supportsBatchVolumeHolds": false,
+      "itemLevelHoldsPredetermined": false,
+      "requiresDuration": false,
+      "requiresEmailDuringHold": true,
+      "requiresFormatDuringHold": false,
+      "requiresFormatDuringCheckout": false,
+      "supportsDownload": true,
+      "supportsFastAvailability": false,
+      "supportsReadNow": true,
+      "showFormatDuringHold": true,
+      "showFormatDuringCheckout": true,
+      "supportsSuspendHold": true,
+      "supportsSuspendHoldStartDateEdit": false,
+      "supportsSuspendHoldEndDateEdit": false,
+      "showQuickstartLink": true,
+      "supportsBorrowingHistory": false,
+      "borrowingHistorySupportsReturnedDates": false,
+      "maintainsBorrowingHistoryOnDisable": false,
+      "supportsCancelledExpiredHolds": false,
+      "helpUrl": "https://help.overdrive.com/en-us/devices.htm",
+      "quickStartUrl": "https://help.overdrive.com/en-us/categories/getting-started.htm",
+      "externalAPI": true,
+      "healthy": true
+     }
+    },
+    "availability": {
+     "metadataId": "S246C582035",
+     "bibType": "DIGITAL",
+     "availabilityLocationType": "OTHER",
+     "status": "UNAVAILABLE",
+     "circulationType": "REQUEST",
+     "libraryUseOnly": false,
+     "heldCopies": 60,
+     "availableCopies": 0,
+     "totalCopies": 15,
+     "onOrderCopies": null,
+     "volumesCount": null,
+     "localisedStatus": "UNAVAILABLE",
+     "eresourceDescription": null,
+     "eresourceUrl": null,
+     "singleBranch": false,
+     "statusType": "UNAVAILABLE"
+    }
+   },
+   "S246C1187916": {
+    "id": "S246C1187916",
+    "sourceLibId": 246,
+    "briefInfo": {
+     "metadataId": "S246C1187916",
+     "title": "Dune",
+     "subtitle": "Part Two",
+     "format": "DVD",
+     "superFormats": [
+      "MOVIES_TV_VIDEO",
+      "MODERN_FORMATS"
+     ],
+     "consumptionFormat": "WATCH",
+     "callNumber": "DVD DUNE Part 2",
+     "authors": [],
+     "publicationDate": "2024",
+     "jacket": {
+      "type": "SYNDETICS",
+      "small": "https://secure.syndetics.com/index.aspx?isbn=/SC.GIF&client=sepup&type=xw12&oclc=&upc=883929802395",
+      "medium": "https://secure.syndetics.com/index.aspx?isbn=/MC.GIF&client=sepup&type=xw12&oclc=&upc=883929802395",
+      "large": "https://secure.syndetics.com/index.aspx?isbn=/LC.JPG&client=sepup&type=xw12&oclc=&upc=883929802395",
+      "local_url": null
+     },
+     "isbns": [],
+     "primaryLanguage": "eng",
+     "series": [],
+     "edition": null,
+     "multiscriptTitle": null,
+     "multiscriptAuthor": null,
+     "contentType": "FICTION",
+     "audiences": [
+      "ADULT"
+     ],
+     "groupKey": "dune_part_2\ufffddenis_villeneuve\ufffdvideo",
+     "id": "S246C1187916",
+     "rating": {
+      "averageRating": 75,
+      "totalCount": 516
+     }
+    },
+    "policy": {
+     "materialType": "PHYSICAL",
+     "provider": "ILS",
+     "holdable": true,
+     "itemLevelHoldableItems": false,
+     "materialPolicy": {
+      "supportsBatchVolumeHolds": false,
+      "itemLevelHoldsPredetermined": true,
+      "requiresDuration": false,
+      "requiresEmailDuringHold": false,
+      "requiresFormatDuringHold": false,
+      "requiresFormatDuringCheckout": false,
+      "supportsDownload": false,
+      "supportsFastAvailability": false,
+      "supportsReadNow": false,
+      "showFormatDuringHold": false,
+      "showFormatDuringCheckout": false,
+      "supportsSuspendHold": false,
+      "supportsSuspendHoldStartDateEdit": false,
+      "supportsSuspendHoldEndDateEdit": true,
+      "showQuickstartLink": false,
+      "supportsBorrowingHistory": true,
+      "borrowingHistorySupportsReturnedDates": false,
+      "maintainsBorrowingHistoryOnDisable": false,
+      "supportsCancelledExpiredHolds": true,
+      "helpUrl": null,
+      "quickStartUrl": null,
+      "externalAPI": false,
+      "healthy": true
+     }
+    },
+    "availability": {
+     "metadataId": "S246C1187916",
+     "bibType": "PHYSICAL",
+     "availabilityLocationType": "OTHER",
+     "status": "AVAILABLE",
+     "circulationType": "REQUEST",
+     "libraryUseOnly": false,
+     "heldCopies": 1,
+     "availableCopies": 8,
+     "totalCopies": 33,
+     "onOrderCopies": 0,
+     "volumesCount": 0,
+     "localisedStatus": "AVAILABLE_IN_BRANCH",
+     "eresourceDescription": null,
+     "eresourceUrl": null,
+     "singleBranch": false,
+     "statusType": "AVAILABLE"
+    }
+   },
+   "S246C1185296": {
+    "id": "S246C1185296",
+    "sourceLibId": 246,
+    "briefInfo": {
+     "metadataId": "S246C1185296",
+     "title": "Dune",
+     "subtitle": "The Graphic Novel. Book 3, The Prophet",
+     "format": "GRAPHIC_NOVEL",
+     "superFormats": [
+      "BOOKS",
+      "MODERN_FORMATS"
+     ],
+     "consumptionFormat": "OTHER",
+     "callNumber": "GN DUNE vol.3 2024",
+     "authors": [
+      "Herbert, Brian"
+     ],
+     "publicationDate": "2024",
+     "jacket": {
+      "type": "SYNDETICS",
+      "small": "https://secure.syndetics.com/index.aspx?isbn=9781419749476/SC.GIF&client=sepup&type=xw12&oclc=",
+      "medium": "https://secure.syndetics.com/index.aspx?isbn=9781419749476/MC.GIF&client=sepup&type=xw12&oclc=",
+      "large": "https://secure.syndetics.com/index.aspx?isbn=9781419749476/LC.JPG&client=sepup&type=xw12&oclc=",
+      "local_url": null
+     },
+     "isbns": [
+      "9781419749476",
+      "1419749471"
+     ],
+     "primaryLanguage": "eng",
+     "series": [],
+     "edition": null,
+     "multiscriptTitle": null,
+     "multiscriptAuthor": null,
+     "contentType": "FICTION",
+     "audiences": [
+      "ADULT"
+     ],
+     "groupKey": "dune_the_graphic_novel_book_3_the_prophet\ufffdherbert_brian\ufffdgraphic_novel",
+     "id": "S246C1185296",
+     "rating": {}
+    },
+    "policy": {
+     "materialType": "PHYSICAL",
+     "provider": "ILS",
+     "holdable": true,
+     "itemLevelHoldableItems": false,
+     "materialPolicy": {
+      "supportsBatchVolumeHolds": false,
+      "itemLevelHoldsPredetermined": true,
+      "requiresDuration": false,
+      "requiresEmailDuringHold": false,
+      "requiresFormatDuringHold": false,
+      "requiresFormatDuringCheckout": false,
+      "supportsDownload": false,
+      "supportsFastAvailability": false,
+      "supportsReadNow": false,
+      "showFormatDuringHold": false,
+      "showFormatDuringCheckout": false,
+      "supportsSuspendHold": false,
+      "supportsSuspendHoldStartDateEdit": false,
+      "supportsSuspendHoldEndDateEdit": true,
+      "showQuickstartLink": false,
+      "supportsBorrowingHistory": true,
+      "borrowingHistorySupportsReturnedDates": false,
+      "maintainsBorrowingHistoryOnDisable": false,
+      "supportsCancelledExpiredHolds": true,
+      "helpUrl": null,
+      "quickStartUrl": null,
+      "externalAPI": false,
+      "healthy": true
+     }
+    },
+    "availability": {
+     "metadataId": "S246C1185296",
+     "bibType": "PHYSICAL",
+     "availabilityLocationType": "OTHER",
+     "status": "AVAILABLE",
+     "circulationType": "REQUEST",
+     "libraryUseOnly": false,
+     "heldCopies": 0,
+     "availableCopies": 2,
+     "totalCopies": 7,
+     "onOrderCopies": 0,
+     "volumesCount": 0,
+     "localisedStatus": "AVAILABLE_IN_BRANCH",
+     "eresourceDescription": null,
+     "eresourceUrl": null,
+     "singleBranch": false,
+     "statusType": "AVAILABLE"
+    }
+   },
+   "S246C735909": {
+    "id": "S246C735909",
+    "sourceLibId": 246,
+    "briefInfo": {
+     "metadataId": "S246C735909",
+     "title": "Dune",
+     "subtitle": "",
+     "format": "BOOK_CD",
+     "superFormats": [
+      "AUDIOBOOKS_SPOKEN_WORD",
+      "TALKING_BOOKS",
+      "MODERN_FORMATS"
+     ],
+     "consumptionFormat": "LISTEN",
+     "callNumber": "CD SCI-FIC HERBERT",
+     "authors": [
+      "Herbert, Frank"
+     ],
+     "publicationDate": "2007",
+     "jacket": {
+      "type": "SYNDETICS",
+      "small": "https://secure.syndetics.com/index.aspx?isbn=9781427201430/SC.GIF&client=sepup&type=xw12&oclc=",
+      "medium": "https://secure.syndetics.com/index.aspx?isbn=9781427201430/MC.GIF&client=sepup&type=xw12&oclc=",
+      "large": "https://secure.syndetics.com/index.aspx?isbn=9781427201430/LC.JPG&client=sepup&type=xw12&oclc=",
+      "local_url": null
+     },
+     "isbns": [
+      "9781427201430",
+      "1427201439"
+     ],
+     "primaryLanguage": "eng",
+     "series": [],
+     "edition": null,
+     "multiscriptTitle": null,
+     "multiscriptAuthor": null,
+     "contentType": "FICTION",
+     "audiences": [
+      "ADULT"
+     ],
+     "groupKey": "dune\ufffdherbert_frank\ufffdtext_eng",
+     "id": "S246C735909",
+     "rating": {}
+    },
+    "policy": {
+     "materialType": "PHYSICAL",
+     "provider": "ILS",
+     "holdable": false,
+     "itemLevelHoldableItems": false,
+     "materialPolicy": {
+      "supportsBatchVolumeHolds": false,
+      "itemLevelHoldsPredetermined": true,
+      "requiresDuration": false,
+      "requiresEmailDuringHold": false,
+      "requiresFormatDuringHold": false,
+      "requiresFormatDuringCheckout": false,
+      "supportsDownload": false,
+      "supportsFastAvailability": false,
+      "supportsReadNow": false,
+      "showFormatDuringHold": false,
+      "showFormatDuringCheckout": false,
+      "supportsSuspendHold": false,
+      "supportsSuspendHoldStartDateEdit": false,
+      "supportsSuspendHoldEndDateEdit": true,
+      "showQuickstartLink": false,
+      "supportsBorrowingHistory": true,
+      "borrowingHistorySupportsReturnedDates": false,
+      "maintainsBorrowingHistoryOnDisable": false,
+      "supportsCancelledExpiredHolds": true,
+      "helpUrl": null,
+      "quickStartUrl": null,
+      "externalAPI": false,
+      "healthy": true
+     }
+    },
+    "availability": {
+     "metadataId": "S246C735909",
+     "bibType": "PHYSICAL",
+     "availabilityLocationType": "NA",
+     "status": "UNAVAILABLE",
+     "circulationType": "NON_CIRCULATING",
+     "libraryUseOnly": false,
+     "heldCopies": 0,
+     "availableCopies": 0,
+     "totalCopies": 1,
+     "onOrderCopies": 0,
+     "volumesCount": 0,
+     "localisedStatus": "UNAVAILABLE_NOT_HOLDABLE",
+     "eresourceDescription": null,
+     "eresourceUrl": null,
+     "singleBranch": false,
+     "statusType": "UNAVAILABLE"
+    }
+   }
+  },
+  "sites": {
+   "WA-SEATTLE": {
+    "siteId": "WA-SEATTLE",
+    "type": "CORE",
+    "libraryId": 246,
+    "shortName": "SPL",
+    "longName": "The Seattle Public Library",
+    "logo": "/images/WA-SEATTLE/logo.png",
+    "domain": "seattle",
+    "subdomain": "seattle",
+    "defaultScopeId": "WA-SEATTLE",
+    "scopes": [
+     {
+      "scopeName": "Seattle Public Library",
+      "scopeId": "WA-SEATTLE",
+      "parentScopeId": null
+     }
+    ]
+   }
+  }
+ }
+}

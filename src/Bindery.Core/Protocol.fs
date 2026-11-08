@@ -72,22 +72,33 @@ type ConfigField =
 type UiMode =
     | Declarative
     | Fragment
-    | Iframe
+    | Sandboxed
 
     member this.Wire =
         match this with
         | Declarative -> "declarative"
         | Fragment -> "fragment"
-        | Iframe -> "iframe"
+        | Sandboxed -> "sandboxed"
 
-    /// Whether the host must reverse-proxy and sanitize HTML for this plugin.
+    /// Whether the host must reverse-proxy HTML for this plugin at all.
     member this.ServesHtml = this <> Declarative
+
+    /// Whether what comes back is inlined into Bindery's own origin, and so must be
+    /// sanitized. False for `Sandboxed`, where the document is handed to an opaque-origin
+    /// iframe and holds no authority worth stripping.
+    member this.RequiresSanitizing = this = Fragment
+
+    /// Whether the host loads the plugin's document into a sandboxed frame.
+    member this.RunsInFrame = this = Sandboxed
 
 module UiMode =
     let ofWire (value: string) =
         match value.Trim().ToLowerInvariant() with
         | "fragment" -> Some Fragment
-        | "iframe" -> Some Iframe
+        | "sandboxed" -> Some Sandboxed
+        // The tier was specified as `iframe` before it was built. Accepting the old name
+        // costs one line and keeps any manifest written against the earlier spec working.
+        | "iframe" -> Some Sandboxed
         | "declarative" -> Some Declarative
         | _ -> None
 
@@ -97,21 +108,32 @@ type NavEntry =
       Icon: string option
       Section: string option }
 
-type PluginUi = { Mode: UiMode; Nav: NavEntry list }
+type PluginUi =
+    { Mode: UiMode
+      Entry: string
+      Nav: NavEntry list }
 
 type Capabilities =
     { Probe: bool
       Update: bool
       Metadata: bool
       Cover: bool
-      Cancel: bool }
+      Cancel: bool
+      /// The plugin may POST a change hint to Bindery (protocol 3.7). Opt-in: a plugin
+      /// that never sets it is simply polled, which is the behaviour every plugin had
+      /// before the capability existed.
+      Notify: bool
+      /// The plugin serves library search, holds, and loans (protocol 3.8).
+      Circulation: bool }
 
     static member Default =
         { Probe = false
           Update = false
           Metadata = false
           Cover = false
-          Cancel = true }
+          Cancel = true
+          Notify = false
+          Circulation = false }
 
 type ItemAction =
     | DownloadItem
@@ -135,6 +157,51 @@ type PluginAction =
       Input: ConfigField list
       Output: ActionOutput }
 
+/// Whether a library item is a copy on a shelf or a licence on a lending platform. The
+/// protocol makes this explicit on every item because the two behave nothing alike: a ready
+/// physical hold means a trip to a branch, a ready digital one means opening an app.
+type Medium =
+    | Physical
+    | Digital
+
+    member this.Wire =
+        match this with
+        | Physical -> "physical"
+        | Digital -> "digital"
+
+module Medium =
+    let ofWire (value: string) =
+        match value.Trim().ToLowerInvariant() with
+        | "physical" -> Some Physical
+        | "digital" -> Some Digital
+        | _ -> None
+
+type HoldOperation =
+    | CancelHold
+    | SuspendHold
+    | ResumeHold
+
+    member this.Wire =
+        match this with
+        | CancelHold -> "cancel"
+        | SuspendHold -> "suspend"
+        | ResumeHold -> "resume"
+
+module HoldOperation =
+    let ofWire (value: string) =
+        match value.Trim().ToLowerInvariant() with
+        | "cancel" -> Some CancelHold
+        | "suspend" -> Some SuspendHold
+        | "resume" -> Some ResumeHold
+        | _ -> None
+
+/// The manifest's `circulation` block (protocol 3.8): what a person fills in to connect
+/// their own library account, and what the plugin can do with it.
+type CirculationSpec =
+    { AccountFields: ConfigField list
+      Mediums: Medium list
+      HoldOperations: HoldOperation list }
+
 type Manifest =
     { ProtocolVersion: int
       Name: string
@@ -148,6 +215,9 @@ type Manifest =
       Capabilities: Capabilities
       Config: ConfigField list
       Actions: PluginAction list
+      /// Present only when the plugin declares `capabilities.circulation` *and* a usable
+      /// account schema. A capability with nothing to fill in is not a capability.
+      Circulation: CirculationSpec option
       Ui: PluginUi }
 
     member this.SecretKeys =
@@ -208,6 +278,14 @@ type ErrorCode =
     | ParseError
     | Cancelled
     | InternalError
+    /// Circulation (protocol 3.8): the item cannot be held at all.
+    | NotHoldable
+    /// Circulation: the account already holds this item.
+    | AlreadyHeld
+    /// Circulation: the account is at the library's hold limit.
+    | HoldLimit
+    /// Circulation: the library has blocked the account (fines, an expired card).
+    | AccountBlocked
     /// A code this build does not know. Additive changes must not break older hosts.
     | UnknownCode of code: string
 
@@ -221,6 +299,10 @@ type ErrorCode =
         | ParseError -> "parse"
         | Cancelled -> "cancelled"
         | InternalError -> "internal"
+        | NotHoldable -> "not_holdable"
+        | AlreadyHeld -> "already_held"
+        | HoldLimit -> "hold_limit"
+        | AccountBlocked -> "account_blocked"
         | UnknownCode value -> value
 
     /// The default when a plugin omits `retryable`. Unknown codes are treated as
@@ -235,7 +317,11 @@ type ErrorCode =
         | NotFound
         | AuthRequired
         | ParseError
-        | Cancelled -> false
+        | Cancelled
+        | NotHoldable
+        | AlreadyHeld
+        | HoldLimit
+        | AccountBlocked -> false
 
 module ErrorCode =
     let ofWire (value: string) =
@@ -248,6 +334,10 @@ module ErrorCode =
         | "parse" -> ParseError
         | "cancelled" -> Cancelled
         | "internal" -> InternalError
+        | "not_holdable" -> NotHoldable
+        | "already_held" -> AlreadyHeld
+        | "hold_limit" -> HoldLimit
+        | "account_blocked" -> AccountBlocked
         | other -> UnknownCode other
 
 type ProtocolError =
@@ -339,7 +429,7 @@ type ActionOutcome =
 
 // ---------------------------------------------------------------- parsing
 
-module private Parse =
+module internal Parse =
     let field (element: JsonElement) : ConfigField option =
         match Json.tryText "key" element, Json.tryText "label" element, Json.tryText "type" element with
         | Some key, Some label, Some rawType ->
@@ -374,18 +464,56 @@ module private Parse =
               Update = Json.boolOr false "update" caps
               Metadata = Json.boolOr false "metadata" caps
               Cover = Json.boolOr false "cover" caps
-              Cancel = Json.boolOr true "cancel" caps }
+              Cancel = Json.boolOr true "cancel" caps
+              Notify = Json.boolOr false "notify" caps
+              Circulation = Json.boolOr false "circulation" caps }
+
+    let circulation (caps: Capabilities) (element: JsonElement) : CirculationSpec option =
+        if not caps.Circulation then
+            None
+        else
+            match Json.tryProp "circulation" element with
+            | None -> None
+            | Some block ->
+                match Json.items "accountFields" block |> List.choose field with
+                | [] -> None
+                | fields ->
+                    let mediums =
+                        match Json.strings "mediums" block |> List.choose Medium.ofWire |> List.distinct with
+                        | [] -> [ Physical; Digital ]
+                        | declared -> declared
+
+                    let operations =
+                        match Json.tryProp "holdOperations" block with
+                        | None -> [ CancelHold ]
+                        | Some _ -> Json.strings "holdOperations" block |> List.choose HoldOperation.ofWire |> List.distinct
+
+                    Some
+                        { AccountFields = fields
+                          Mediums = mediums
+                          HoldOperations = operations }
+
+    /// A UI path is only accepted if it is rooted and cannot climb out of the plugin's
+    /// mount point. A bad one is dropped rather than corrected.
+    let private uiPath (value: string) =
+        if value.StartsWith "/"
+           && not (value.StartsWith "//")
+           && not (value.Contains "..")
+           && not (value.Contains "\\")
+        then Some value
+        else None
 
     let ui (element: JsonElement) =
         match Json.tryProp "ui" element with
-        | None -> { Mode = Declarative; Nav = [] }
+        | None -> { Mode = Declarative; Entry = "/"; Nav = [] }
         | Some ui ->
             { Mode = Json.tryText "mode" ui |> Option.bind UiMode.ofWire |> Option.defaultValue Declarative
+              Entry = Json.tryText "entry" ui |> Option.bind uiPath |> Option.defaultValue "/"
               Nav =
                 Json.items "nav" ui
                 |> List.choose (fun entry ->
                     match Json.tryText "label" entry, Json.tryText "path" entry with
-                    | Some label, Some path when path.StartsWith "/" && not (path.Contains "..") ->
+                    | Some label, Some path when (uiPath path).IsSome ->
                         Some
                             { Label = label
                               Path = path
@@ -486,6 +614,8 @@ module Manifest =
                 match Json.tryText "version" element with
                 | None -> Error "manifest is missing 'version'"
                 | Some pluginVersion ->
+                    let capabilities = Parse.capabilities element
+
                     Ok
                         { ProtocolVersion = version
                           Name = name
@@ -499,9 +629,10 @@ module Manifest =
                             (match Json.strings "formats" element with
                              | [] -> [ "epub" ]
                              | formats -> formats |> List.map (fun f -> f.ToLowerInvariant()))
-                          Capabilities = Parse.capabilities element
+                          Capabilities = capabilities
                           Config = Json.items "config" element |> List.choose Parse.field
                           Actions = Json.items "actions" element |> List.choose Parse.action
+                          Circulation = Parse.circulation capabilities element
                           Ui = Parse.ui element }
 
     let parse (text: string) : Result<Manifest, string> =

@@ -2,6 +2,7 @@ using Bindery.Core;
 using Bindery.Host.Configuration;
 using Bindery.Host.Data;
 using Bindery.Host.Library;
+using Bindery.Host.Notifications;
 using Bindery.Host.Plugins;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -22,6 +23,8 @@ public sealed class DownloadRunner(
     PluginClient client,
     PluginSettingsStore settings,
     LibraryStore library,
+    BookIndexer indexer,
+    NotificationService notifications,
     IOptions<BinderyOptions> options,
     ILogger<DownloadRunner> logger)
 {
@@ -207,15 +210,25 @@ public sealed class DownloadRunner(
             var sidecar = BuildSidecar(metadata, descriptor.Name, existing);
             var placement = await library.PlaceAsync(sidecar, staged, existing?.DirectoryPath, cancellationToken);
 
-            var book = await IndexAsync(sidecar, placement, existing, cancellationToken);
+            var placed = sidecar with { Files = placement.Files, CoverPath = placement.CoverPath };
+            var indexed = await indexer.IndexAsync(placed, placement.DirectoryPath, existing, cancellationToken);
 
-            job.BookId = book.Id;
+            job.BookId = indexed.Book.Id;
             job.Status = JobStatus.Succeeded;
             job.Percent = 100;
             job.Message = "Done";
             job.CompletedAt = DateTimeOffset.UtcNow;
             await LogAsync(job, "info", $"filed as {placement.DirectoryPath}");
             await db.SaveChangesAsync(cancellationToken);
+
+            if (!job.IsUpdate)
+            {
+                await NotifyAsync(
+                    job,
+                    NotificationCategories.DownloadFiled,
+                    $"Filed: {indexed.Book.Title}",
+                    $"{indexed.Book.Title}\n\nis on the shelf, from {job.Url}.\n\n— Bindery");
+            }
         }
         finally
         {
@@ -245,79 +258,6 @@ public sealed class DownloadRunner(
             UpdatedAt = metadata.Updated.OrNullable() ?? DateTimeOffset.UtcNow
         };
 
-    /// <summary>
-    /// Writes the index rows for a placed book, reusing author, tag, and series rows.
-    /// </summary>
-    private async Task<BookEntity> IndexAsync(
-        SidecarMetadata metadata,
-        Placement placement,
-        BookEntity? existing,
-        CancellationToken cancellationToken)
-    {
-        var book = existing;
-
-        if (book is null)
-        {
-            book = new BookEntity { Id = metadata.Id, AddedAt = metadata.AddedAt };
-            db.Books.Add(book);
-        }
-        else
-        {
-            await db.Entry(book).Collection(b => b.Authors).LoadAsync(cancellationToken);
-            await db.Entry(book).Collection(b => b.Tags).LoadAsync(cancellationToken);
-            await db.Entry(book).Collection(b => b.Files).LoadAsync(cancellationToken);
-
-            db.BookAuthors.RemoveRange(book.Authors);
-            db.BookTags.RemoveRange(book.Tags);
-            db.BookFiles.RemoveRange(book.Files);
-        }
-
-        book.Title = metadata.Title;
-        book.SortTitle = Domain.Naming.sortTitle(metadata.Title);
-        book.Summary = metadata.Summary;
-        book.Language = metadata.Language;
-        book.Published = metadata.Published;
-        book.UpdatedAt = metadata.UpdatedAt;
-        book.SeriesIndex = metadata.SeriesIndex;
-        book.SourceUrl = metadata.SourceUrl;
-        book.SourcePlugin = metadata.SourcePlugin;
-        book.SourceId = metadata.SourceId;
-        book.Chapters = metadata.Chapters;
-        book.DirectoryPath = placement.DirectoryPath;
-        book.CoverPath = placement.CoverPath;
-        book.Series = metadata.Series is null ? null : await GetOrAddSeriesAsync(metadata.Series, cancellationToken);
-
-        var order = 0;
-
-        foreach (var name in metadata.Authors)
-        {
-            var author = await GetOrAddAuthorAsync(name, cancellationToken);
-            book.Authors.Add(new BookAuthorEntity { Book = book, Author = author, Order = order++ });
-        }
-
-        foreach (var name in metadata.Tags.Distinct(StringComparer.OrdinalIgnoreCase))
-        {
-            var tag = await GetOrAddTagAsync(name, cancellationToken);
-            book.Tags.Add(new BookTagEntity { Book = book, Tag = tag });
-        }
-
-        foreach (var file in placement.Files)
-        {
-            book.Files.Add(new BookFileEntity
-            {
-                Book = book,
-                Format = file.Format,
-                ContentType = file.ContentType,
-                RelativePath = file.RelativePath,
-                SizeBytes = file.SizeBytes,
-                Sha256 = file.Sha256
-            });
-        }
-
-        await db.SaveChangesAsync(cancellationToken);
-        return book;
-    }
-
     private async Task<BookEntity?> FindExistingBookAsync(DownloadJobEntity job, CancellationToken cancellationToken)
     {
         if (job.BookId is { } bookId)
@@ -328,48 +268,6 @@ public sealed class DownloadRunner(
         // Same URL is the reliable signal before a download; source id only exists after
         // the plugin has told us one.
         return await db.Books.FirstOrDefaultAsync(book => book.SourceUrl == job.Url, cancellationToken);
-    }
-
-    private async Task<AuthorEntity> GetOrAddAuthorAsync(string name, CancellationToken cancellationToken)
-    {
-        var existing = await db.Authors.FirstOrDefaultAsync(author => author.Name == name, cancellationToken);
-
-        if (existing is not null)
-        {
-            return existing;
-        }
-
-        var author = new AuthorEntity { Name = name, SortName = Domain.Naming.sortAuthor(name) };
-        db.Authors.Add(author);
-        return author;
-    }
-
-    private async Task<TagEntity> GetOrAddTagAsync(string name, CancellationToken cancellationToken)
-    {
-        var existing = await db.Tags.FirstOrDefaultAsync(tag => tag.Name == name, cancellationToken);
-
-        if (existing is not null)
-        {
-            return existing;
-        }
-
-        var tag = new TagEntity { Name = name };
-        db.Tags.Add(tag);
-        return tag;
-    }
-
-    private async Task<SeriesEntity> GetOrAddSeriesAsync(string name, CancellationToken cancellationToken)
-    {
-        var existing = await db.Series.FirstOrDefaultAsync(series => series.Name == name, cancellationToken);
-
-        if (existing is not null)
-        {
-            return existing;
-        }
-
-        var series = new SeriesEntity { Name = name };
-        db.Series.Add(series);
-        return series;
     }
 
     private async Task FailAsync(DownloadJobEntity job, string code, string message, bool retryable)
@@ -397,6 +295,38 @@ public sealed class DownloadRunner(
         }
 
         await db.SaveChangesAsync(CancellationToken.None);
+
+        if (job.Status == JobStatus.Failed)
+        {
+            await NotifyAsync(
+                job,
+                NotificationCategories.DownloadFailed,
+                $"Download failed: {job.Url}",
+                $"{job.Url}\n\ncould not be downloaded and will not be retried.\n\n{code}: {message}\n\n— Bindery");
+        }
+    }
+
+    /// <summary>
+    /// Tells whoever queued the job how it ended. Scheduled updates and plugin hints have no
+    /// person behind them and are never announced; a notification must never be able to
+    /// fail the download it is about.
+    /// </summary>
+    private async Task NotifyAsync(DownloadJobEntity job, string category, string subject, string body)
+    {
+        if (string.IsNullOrEmpty(job.RequesterSubject))
+        {
+            return;
+        }
+
+        try
+        {
+            await notifications.EnqueueAsync(
+                job.RequesterSubject, category, $"downloads:{job.PluginName}", subject, body, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "could not queue a notification for job {Job}", job.Id);
+        }
     }
 
     private async Task MarkCancelledAsync(DownloadJobEntity job)

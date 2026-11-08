@@ -20,6 +20,25 @@ A small self-hosted service that serves an **OPDS catalog** and acquires books t
 The first plugin wraps [FanFicFare](https://github.com/JimmXinu/FanFicFare): paste an AO3
 or FFN link, get an EPUB in your catalog.
 
+## Your public library, too
+
+Plugins can also speak **library circulation**: search your public library, place holds on
+physical books, and keep track of holds and loans. The
+[BiblioCommons plugin](plugins/bibliocommons/) covers Seattle Public Library, KCLS, and any
+other library whose catalog runs on BiblioCommons.
+
+- **Every card is its own person's.** Each signed-in person connects their own library cards;
+  PINs are encrypted and nobody else can see, search with, or be mailed about them.
+- **Physical and digital are never blurred.** Search filters on them first, and every result
+  and hold says which it is — a copy at a branch, or a licence in OverDrive/Libby or hoopla.
+- **Bindery tracks the lifecycle** — queued, on its way, ready on the shelf, picked up,
+  due, overdue — from what the library reports, and emails you when something needs you: a
+  hold is ready, a pickup deadline is close, a loan is due.
+- **Notifications are a host service**, shared by every plugin. Plugins report state; only
+  Bindery decides to send a message. Downloads use it too.
+
+Details: [`docs/CIRCULATION.md`](docs/CIRCULATION.md) and protocol §3.8.
+
 ## The idea
 
 **A plugin is a container that speaks HTTP.** Not a shared library, not a subprocess, not a
@@ -50,15 +69,18 @@ plugins:
 
 ## Plugins can bring their own UI
 
-A plugin isn't limited to returning files — it can contribute real, server-rendered HTML to
-the Bindery interface. Bindery reverse-proxies the plugin's fragments and htmx swaps them
-into the page, so a plugin's screens sit inside Bindery's chrome and inherit its styling.
+A plugin isn't limited to returning files — it can contribute a real interface to Bindery,
+with its own JavaScript, CSS, and interactions.
 
-The rule that makes it safe: **a plugin ships no JavaScript.** It uses Bindery's htmx
-runtime for interactivity — async forms, polling, SSE progress, lazy loading — which covers
-essentially everything, while keeping the sanitizer's job small enough to be exhaustively
-tested. Plugins that genuinely need their own JS declare `mode: "iframe"` and get sandboxed
-on a separate origin instead.
+The rule that makes it safe isn't a filter, it's a boundary: **a plugin's interface runs in
+an iframe with an opaque origin**, sandboxed without `allow-same-origin`. It cannot read
+your session cookie, reach Bindery's DOM, or call Bindery's API, and `connect-src 'none'`
+means it has no network of its own either. Everything it needs from the host crosses one
+small, typed `postMessage` bridge that scopes every request to the plugin's own mount point
+and attaches the CSRF token on the plugin's behalf.
+
+So a plugin can ship a drag-and-drop editor if it wants to, and the browser — not a
+sanitizer — is what keeps it away from your library.
 
 Full contract: [`docs/PLUGIN-UI.md`](docs/PLUGIN-UI.md).
 

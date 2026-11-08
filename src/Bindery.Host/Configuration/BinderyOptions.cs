@@ -32,9 +32,108 @@ public sealed class BinderyOptions
 
     public DownloadOptions Downloads { get; set; } = new();
 
+    public UpdateOptions Updates { get; set; } = new();
+
+    public UploadOptions Uploads { get; set; } = new();
+
     public PluginHostOptions Plugins { get; set; } = new();
 
     public SecurityOptions Security { get; set; } = new();
+
+    public CirculationOptions Circulation { get; set; } = new();
+
+    public NotificationOptions Notifications { get; set; } = new();
+}
+
+/// <summary>
+/// Library holds and loans through circulation plugins — docs/CIRCULATION.md.
+/// </summary>
+public sealed class CirculationOptions
+{
+    /// <summary>Whether accounts are synced in the background at all.</summary>
+    public bool SyncEnabled { get; set; } = true;
+
+    /// <summary>How stale an account may get before it is synced again.</summary>
+    public TimeSpan SyncInterval { get; set; } = TimeSpan.FromMinutes(30);
+
+    /// <summary>How often to look for accounts that are due. Cheap: one indexed query.</summary>
+    public TimeSpan SweepInterval { get; set; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>
+    /// Accounts synced per sweep. Keeps a long outage from becoming a burst of logins
+    /// against one library, which is the kind of traffic that gets an IP refused.
+    /// </summary>
+    public int MaxPerSweep { get; set; } = 4;
+
+    /// <summary>How long before a pickup deadline to remind someone.</summary>
+    public TimeSpan PickupReminder { get; set; } = TimeSpan.FromHours(48);
+
+    /// <summary>How long before a due date to remind someone.</summary>
+    public TimeSpan DueReminder { get; set; } = TimeSpan.FromDays(3);
+
+    /// <summary>Finished holds and returned loans kept on the board, newest first.</summary>
+    public int HistoryLimit { get; set; } = 50;
+}
+
+/// <summary>
+/// The host's notification subsystem — docs/CIRCULATION.md §4. Shared by every source that
+/// has something to tell a person; plugins never send messages themselves.
+/// </summary>
+public sealed class NotificationOptions
+{
+    public EmailOptions Email { get; set; } = new();
+
+    /// <summary>Delivery attempts before a message is marked failed.</summary>
+    public int MaxAttempts { get; set; } = 5;
+
+    /// <summary>Base delay between attempts; doubles each time.</summary>
+    public TimeSpan RetryDelay { get; set; } = TimeSpan.FromMinutes(1);
+
+    /// <summary>How often the outbox is drained.</summary>
+    public TimeSpan PollInterval { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>Delivered and abandoned messages kept, oldest pruned first.</summary>
+    public int HistoryLimit { get; set; } = 1000;
+}
+
+public sealed class EmailOptions
+{
+    /// <summary>
+    /// Off by default: until an operator configures a mail server, messages are queued and
+    /// marked suppressed rather than retried against nothing.
+    /// </summary>
+    public bool Enabled { get; set; }
+
+    public string? Host { get; set; }
+
+    public int Port { get; set; } = 587;
+
+    /// <summary>
+    /// STARTTLS. The framework's SMTP client does not do implicit TLS (port 465), so a
+    /// provider that only offers that needs a relay; every mainstream one also offers 587.
+    /// </summary>
+    public bool UseStartTls { get; set; } = true;
+
+    public string? Username { get; set; }
+
+    /// <summary>From a Kubernetes Secret, never values.yaml. Never logged.</summary>
+    public string? Password { get; set; }
+
+    /// <summary>e.g. "Bindery &lt;bindery@example.org&gt;".</summary>
+    public string? From { get; set; }
+
+    /// <summary>
+    /// Write each message as an .eml file here instead of connecting to a server. For local
+    /// development and tests: real mail, inspectable, sent nowhere.
+    /// </summary>
+    public string? PickupDirectory { get; set; }
+
+    /// <summary>Base URL used in links inside messages; falls back to Bindery:PublicBaseUrl.</summary>
+    public string? LinkBaseUrl { get; set; }
+
+    public bool IsConfigured =>
+        Enabled && (!string.IsNullOrWhiteSpace(PickupDirectory)
+                    || (!string.IsNullOrWhiteSpace(Host) && !string.IsNullOrWhiteSpace(From)));
 }
 
 public sealed class SecurityOptions
@@ -52,6 +151,21 @@ public sealed class SecurityOptions
     /// with nothing in the server log.
     /// </remarks>
     public IList<string> FormActionSources { get; set; } = new List<string>();
+}
+
+/// <summary>Filing a book by hand, rather than through a downloader.</summary>
+public sealed class UploadOptions
+{
+    /// <summary>
+    /// Largest file the upload form accepts.
+    /// </summary>
+    /// <remarks>
+    /// Also raises Kestrel's request body ceiling at boot, because a limit the server
+    /// rejects at 30 MB regardless of what is configured here would be a lie. Uploading is
+    /// behind the UI policy, so the people who can reach it are the people who own the
+    /// volume.
+    /// </remarks>
+    public long MaxBytes { get; set; } = 256L * 1024 * 1024;
 }
 
 public enum AuthMode
@@ -118,6 +232,53 @@ public sealed class DownloadOptions
     public int HistoryLimit { get; set; } = 500;
 }
 
+/// <summary>
+/// The unattended half of keeping a book current: re-fetching it when the source moves.
+/// </summary>
+/// <remarks>
+/// PLAN.md §10 deferred this to v1.1 pending per-book source tracking. That tracking now
+/// exists — every book carries SourceUrl and SourcePlugin — so the scheduler is a loop over
+/// it rather than new state. Nothing here writes a schema: "when was this last checked" is
+/// derived from the Jobs table, which already records BookId and CreatedAt.
+/// </remarks>
+public sealed class UpdateOptions
+{
+    /// <summary>Whether books are re-checked without being asked.</summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>
+    /// How stale a book's last check may get before it is due again. This is per book, not
+    /// a global cadence: the sweep runs far more often and simply picks up whatever has
+    /// aged past this.
+    /// </summary>
+    public TimeSpan Interval { get; set; } = TimeSpan.FromHours(6);
+
+    /// <summary>How often to look for due books. Cheap: one indexed query.</summary>
+    public TimeSpan SweepInterval { get; set; } = TimeSpan.FromMinutes(15);
+
+    /// <summary>
+    /// Books queued per sweep. A ceiling rather than a target — it keeps a library that has
+    /// been offline for a week from enqueueing every book at once and hammering one site.
+    /// </summary>
+    public int MaxPerSweep { get; set; } = 4;
+
+    /// <summary>
+    /// Smallest gap between two notification-driven updates of the same book (§3.7). A
+    /// plugin ingesting a burst of files should debounce on its side too; this is the
+    /// backstop for when it does not.
+    /// </summary>
+    public TimeSpan NotifyDebounce { get; set; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>
+    /// Absolute URL advertised to plugins as the notification endpoint. Defaults to
+    /// loopback because plugins run as sidecars sharing the pod's network namespace: the
+    /// call never leaves the pod, so it needs no TLS, no ingress rule, and no exposure of
+    /// this endpoint to the internet. A `service`-mode plugin on another host needs this
+    /// set to a reachable absolute URL.
+    /// </summary>
+    public string NotifyUrl { get; set; } = "http://127.0.0.1:8080/bindery/v1/notify";
+}
+
 public sealed class PluginHostOptions
 {
     /// <summary>
@@ -137,6 +298,16 @@ public sealed class PluginHostOptions
 
     /// <summary>Largest fragment the UI proxy will forward, in bytes.</summary>
     public int MaxFragmentBytes { get; set; } = 512 * 1024;
+
+    /// <summary>
+    /// Largest sandboxed UI response the proxy will forward, in bytes.
+    /// </summary>
+    /// <remarks>
+    /// Higher than <see cref="MaxFragmentBytes"/> because a sandboxed plugin serves its own
+    /// subresources through this path — scripts, stylesheets, fonts, images — not just a
+    /// snippet of markup.
+    /// </remarks>
+    public int MaxSandboxedBytes { get; set; } = 4 * 1024 * 1024;
 
     public TimeSpan FragmentTimeout { get; set; } = TimeSpan.FromSeconds(15);
 
