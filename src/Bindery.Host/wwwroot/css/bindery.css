@@ -315,9 +315,13 @@ time, data, .folio, .tally, .digest, .pager-position { font-variant-numeric: tab
 /* ---------------------------------------------------------------- signal field */
 
 /*
-    Never a flat background. A dot lattice on a soft vertical tint, breathing slowly, exactly
-    as both source systems draw behind their content. It is inert to the reader: fixed,
-    aria-hidden, pointer-transparent, and frozen entirely under reduced motion.
+    Never a flat background. A dot lattice on a soft vertical tint, as both source systems
+    draw behind their content. It is inert to the reader: fixed, aria-hidden, and
+    pointer-transparent.
+
+    It is deliberately static. A looping animation on a full-viewport layer repaints the whole
+    window every frame for as long as the tab is open (~35% CPU in Chrome, ~50% in Firefox on
+    an idle page), and re-runs every backdrop-filter above it.
 */
 .signal-field {
     position: fixed;
@@ -327,20 +331,14 @@ time, data, .folio, .tally, .digest, .pager-position { font-variant-numeric: tab
     background:
         radial-gradient(circle at center, var(--signal-dot) 1px, transparent 1.6px) 0 0 / var(--signal-step) var(--signal-step),
         linear-gradient(to bottom, var(--void) 0%, var(--page) 42%, var(--page) 100%);
-    animation: signal-breathe 14s ease-in-out infinite;
 }
 
-/* The protection scrim: content never sits directly on the moving field. */
+/* The protection scrim: content never sits directly on the field. */
 .signal-field::after {
     content: "";
     position: absolute;
     inset: 0;
     background: linear-gradient(to bottom, transparent 0%, color-mix(in srgb, var(--page) 55%, transparent) 22%, color-mix(in srgb, var(--page) 86%, transparent) 55%, var(--page) 100%);
-}
-
-@keyframes signal-breathe {
-    0%, 100% { opacity: 0.85; }
-    50% { opacity: 1; }
 }
 
 /* ---------------------------------------------------------------- chrome */
@@ -2345,8 +2343,6 @@ form > label {
         scroll-behavior: auto !important;
     }
 
-    /* Both source systems freeze their field rather than merely slowing it. */
-    .signal-field { animation: none; opacity: 1; }
     .fd { animation: none; }
     .button:active { transform: none; }
     .book-row:hover .row-arrow { transform: none; }
