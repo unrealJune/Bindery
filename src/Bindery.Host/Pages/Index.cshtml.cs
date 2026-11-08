@@ -104,7 +104,8 @@ public sealed class IndexModel(
             SourceUrl,
             User.Identity?.Name,
             PreferredPlugin,
-            cancellationToken);
+            cancellationToken,
+            Security.Identity.SubjectOf(User));
 
         if (!result.Accepted)
         {

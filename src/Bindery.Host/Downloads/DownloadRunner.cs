@@ -2,6 +2,7 @@ using Bindery.Core;
 using Bindery.Host.Configuration;
 using Bindery.Host.Data;
 using Bindery.Host.Library;
+using Bindery.Host.Notifications;
 using Bindery.Host.Plugins;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -23,6 +24,7 @@ public sealed class DownloadRunner(
     PluginSettingsStore settings,
     LibraryStore library,
     BookIndexer indexer,
+    NotificationService notifications,
     IOptions<BinderyOptions> options,
     ILogger<DownloadRunner> logger)
 {
@@ -218,6 +220,15 @@ public sealed class DownloadRunner(
             job.CompletedAt = DateTimeOffset.UtcNow;
             await LogAsync(job, "info", $"filed as {placement.DirectoryPath}");
             await db.SaveChangesAsync(cancellationToken);
+
+            if (!job.IsUpdate)
+            {
+                await NotifyAsync(
+                    job,
+                    NotificationCategories.DownloadFiled,
+                    $"Filed: {indexed.Book.Title}",
+                    $"{indexed.Book.Title}\n\nis on the shelf, from {job.Url}.\n\n— Bindery");
+            }
         }
         finally
         {
@@ -284,6 +295,38 @@ public sealed class DownloadRunner(
         }
 
         await db.SaveChangesAsync(CancellationToken.None);
+
+        if (job.Status == JobStatus.Failed)
+        {
+            await NotifyAsync(
+                job,
+                NotificationCategories.DownloadFailed,
+                $"Download failed: {job.Url}",
+                $"{job.Url}\n\ncould not be downloaded and will not be retried.\n\n{code}: {message}\n\n— Bindery");
+        }
+    }
+
+    /// <summary>
+    /// Tells whoever queued the job how it ended. Scheduled updates and plugin hints have no
+    /// person behind them and are never announced; a notification must never be able to
+    /// fail the download it is about.
+    /// </summary>
+    private async Task NotifyAsync(DownloadJobEntity job, string category, string subject, string body)
+    {
+        if (string.IsNullOrEmpty(job.RequesterSubject))
+        {
+            return;
+        }
+
+        try
+        {
+            await notifications.EnqueueAsync(
+                job.RequesterSubject, category, $"downloads:{job.PluginName}", subject, body, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "could not queue a notification for job {Job}", job.Id);
+        }
     }
 
     private async Task MarkCancelledAsync(DownloadJobEntity job)

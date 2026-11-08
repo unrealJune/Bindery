@@ -1,9 +1,11 @@
 using Bindery.Host.Catalog;
+using Bindery.Host.Circulation;
 using Bindery.Host.Configuration;
 using Bindery.Host.Data;
 using Bindery.Host.Downloads;
 using Bindery.Host.Endpoints;
 using Bindery.Host.Library;
+using Bindery.Host.Notifications;
 using Bindery.Host.Opds;
 using Bindery.Host.Plugins;
 using Bindery.Host.Security;
@@ -75,6 +77,18 @@ builder.Services.AddScoped<LibraryScanner>();
 builder.Services.AddScoped<LibraryWriter>();
 builder.Services.AddHostedService<DownloadWorker>();
 builder.Services.AddHostedService<UpdateScheduler>();
+
+// ---------------------------------------------------------------- circulation and notifications
+
+builder.Services.AddScoped<CirculationAccountStore>();
+builder.Services.AddScoped<CirculationService>();
+builder.Services.AddHostedService<CirculationSyncWorker>();
+
+builder.Services.AddScoped<NotificationService>();
+builder.Services.AddSingleton<INotificationChannel, EmailChannel>();
+// A singleton as well as a hosted service, so the outbox can be drained on demand.
+builder.Services.AddSingleton<NotificationWorker>();
+builder.Services.AddHostedService(services => services.GetRequiredService<NotificationWorker>());
 
 // ---------------------------------------------------------------- web
 

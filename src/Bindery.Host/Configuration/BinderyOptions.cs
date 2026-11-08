@@ -39,6 +39,101 @@ public sealed class BinderyOptions
     public PluginHostOptions Plugins { get; set; } = new();
 
     public SecurityOptions Security { get; set; } = new();
+
+    public CirculationOptions Circulation { get; set; } = new();
+
+    public NotificationOptions Notifications { get; set; } = new();
+}
+
+/// <summary>
+/// Library holds and loans through circulation plugins — docs/CIRCULATION.md.
+/// </summary>
+public sealed class CirculationOptions
+{
+    /// <summary>Whether accounts are synced in the background at all.</summary>
+    public bool SyncEnabled { get; set; } = true;
+
+    /// <summary>How stale an account may get before it is synced again.</summary>
+    public TimeSpan SyncInterval { get; set; } = TimeSpan.FromMinutes(30);
+
+    /// <summary>How often to look for accounts that are due. Cheap: one indexed query.</summary>
+    public TimeSpan SweepInterval { get; set; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>
+    /// Accounts synced per sweep. Keeps a long outage from becoming a burst of logins
+    /// against one library, which is the kind of traffic that gets an IP refused.
+    /// </summary>
+    public int MaxPerSweep { get; set; } = 4;
+
+    /// <summary>How long before a pickup deadline to remind someone.</summary>
+    public TimeSpan PickupReminder { get; set; } = TimeSpan.FromHours(48);
+
+    /// <summary>How long before a due date to remind someone.</summary>
+    public TimeSpan DueReminder { get; set; } = TimeSpan.FromDays(3);
+
+    /// <summary>Finished holds and returned loans kept on the board, newest first.</summary>
+    public int HistoryLimit { get; set; } = 50;
+}
+
+/// <summary>
+/// The host's notification subsystem — docs/CIRCULATION.md §4. Shared by every source that
+/// has something to tell a person; plugins never send messages themselves.
+/// </summary>
+public sealed class NotificationOptions
+{
+    public EmailOptions Email { get; set; } = new();
+
+    /// <summary>Delivery attempts before a message is marked failed.</summary>
+    public int MaxAttempts { get; set; } = 5;
+
+    /// <summary>Base delay between attempts; doubles each time.</summary>
+    public TimeSpan RetryDelay { get; set; } = TimeSpan.FromMinutes(1);
+
+    /// <summary>How often the outbox is drained.</summary>
+    public TimeSpan PollInterval { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>Delivered and abandoned messages kept, oldest pruned first.</summary>
+    public int HistoryLimit { get; set; } = 1000;
+}
+
+public sealed class EmailOptions
+{
+    /// <summary>
+    /// Off by default: until an operator configures a mail server, messages are queued and
+    /// marked suppressed rather than retried against nothing.
+    /// </summary>
+    public bool Enabled { get; set; }
+
+    public string? Host { get; set; }
+
+    public int Port { get; set; } = 587;
+
+    /// <summary>
+    /// STARTTLS. The framework's SMTP client does not do implicit TLS (port 465), so a
+    /// provider that only offers that needs a relay; every mainstream one also offers 587.
+    /// </summary>
+    public bool UseStartTls { get; set; } = true;
+
+    public string? Username { get; set; }
+
+    /// <summary>From a Kubernetes Secret, never values.yaml. Never logged.</summary>
+    public string? Password { get; set; }
+
+    /// <summary>e.g. "Bindery &lt;bindery@example.org&gt;".</summary>
+    public string? From { get; set; }
+
+    /// <summary>
+    /// Write each message as an .eml file here instead of connecting to a server. For local
+    /// development and tests: real mail, inspectable, sent nowhere.
+    /// </summary>
+    public string? PickupDirectory { get; set; }
+
+    /// <summary>Base URL used in links inside messages; falls back to Bindery:PublicBaseUrl.</summary>
+    public string? LinkBaseUrl { get; set; }
+
+    public bool IsConfigured =>
+        Enabled && (!string.IsNullOrWhiteSpace(PickupDirectory)
+                    || (!string.IsNullOrWhiteSpace(Host) && !string.IsNullOrWhiteSpace(From)));
 }
 
 public sealed class SecurityOptions

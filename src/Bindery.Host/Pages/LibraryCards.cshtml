@@ -1,0 +1,180 @@
+@page "/library-cards"
+@model LibraryCardsModel
+@using Bindery.Host.Notifications
+@{
+    ViewData["Title"] = "Library cards";
+}
+
+<header class="page-heading">
+    <div>
+        <h1>Your library cards</h1>
+        <p>Cards are yours alone — nobody else signed in to this Bindery can see them, search with them, or receive mail about them. PINs are encrypted and never shown again.</p>
+    </div>
+    <a class="button button-secondary" asp-page="/Holds"><span>Holds &amp; loans</span></a>
+</header>
+
+@if (Model.Plugins.Count == 0)
+{
+    <div class="empty-state empty-state-wide">
+        <strong>No library plugin is installed.</strong>
+        <span>Install a circulation plugin, such as <code>bibliocommons</code>, under <code>Bindery:Plugins:Registry</code>.</span>
+    </div>
+}
+
+@foreach (var account in Model.Accounts)
+{
+    var spec = Model.SpecFor(account.Plugin);
+    var plain = Model.PlainFields(account);
+
+    <section class="plugin-docket card-docket" aria-labelledby="card-@account.Id">
+        <div class="docket-heading">
+            <h2 id="card-@account.Id">
+                <span class="status-mark status-@(account.NeedsAttention ? "failed" : account.LastSyncedAt is null ? "queued" : "ready")" aria-hidden="true"></span>
+                @account.LibraryName
+            </h2>
+            <span>@(account.DisplayName ?? account.Plugin)</span>
+        </div>
+
+        <dl class="plugin-facts">
+            <div>
+                <dt>Last checked</dt>
+                <dd>@(account.LastSyncedAt is { } at ? at.ToLocalTime().ToString("ddd d MMM HH:mm") : "never")</dd>
+            </div>
+            <div>
+                <dt>Pickup branches</dt>
+                <dd>@CirculationAccountStoreCount(account)</dd>
+            </div>
+            <div>
+                <dt>Via</dt>
+                <dd>@account.Plugin</dd>
+            </div>
+        </dl>
+
+        @if (account.NeedsAttention)
+        {
+            <p class="notice notice-error" role="alert">The library refused this card's PIN. Syncing is paused so the card is not locked — re-enter it below.</p>
+        }
+        else if (account.LastError is not null)
+        {
+            <p class="notice notice-warn" role="status">Last sync: @account.LastError</p>
+        }
+
+        @if (spec is not null)
+        {
+            <details class="card-edit" open="@account.NeedsAttention">
+                <summary>Update card details</summary>
+                <form method="post" asp-page-handler="Update" class="plugin-form">
+                    <input type="hidden" name="account" value="@account.Id" />
+                    @foreach (var field in spec.AccountFields.AsList())
+                    {
+                        <partial name="_ConfigField" model="new ConfigFieldView(field, plain.GetValueOrDefault(field.Key, string.Empty), field.Type.IsSecret)" />
+                    }
+                    <div class="form-actions">
+                        <button class="button button-primary" type="submit"><span>Check and save</span></button>
+                    </div>
+                </form>
+            </details>
+        }
+
+        <form method="post" asp-page-handler="Remove" class="plugin-refresh">
+            <input type="hidden" name="account" value="@account.Id" />
+            <button class="text-action danger" type="submit">Remove this card from Bindery</button>
+        </form>
+    </section>
+}
+
+@foreach (var plugin in Model.Plugins)
+{
+    var spec = plugin.Manifest!.Circulation.Value;
+
+    <section class="plugin-docket card-docket" aria-labelledby="connect-@plugin.Name">
+        <div class="docket-heading">
+            <h2 id="connect-@plugin.Name">Add a card — @plugin.DisplayName</h2>
+            <span>@string.Join(" + ", spec.Mediums.AsList().Select(medium => medium.Wire))</span>
+        </div>
+        @if (plugin.Manifest.Description.HasValue())
+        {
+            <p class="action-help">@plugin.Manifest.Description.Value</p>
+        }
+        <form method="post" asp-page-handler="Connect" class="plugin-form">
+            <input type="hidden" name="plugin" value="@plugin.Name" />
+            @foreach (var field in spec.AccountFields.AsList())
+            {
+                <partial name="_ConfigField" model="new ConfigFieldView(field, field.Default.OrDefault(string.Empty), false)" />
+            }
+            <div class="form-actions">
+                <button class="button button-primary" type="submit"><span>Check and connect</span></button>
+            </div>
+        </form>
+    </section>
+}
+
+<section class="plugin-docket card-docket" aria-labelledby="notify-heading">
+    <div class="docket-heading">
+        <h2 id="notify-heading">Notifications</h2>
+        <span>@(Model.EmailConfigured ? (Model.EmailPickupMode ? "email — pickup directory" : "email — on") : "email not configured on this server")</span>
+    </div>
+
+    @if (!Model.EmailConfigured)
+    {
+        <p class="notice notice-warn" role="status">This server has no mail server configured, so nothing will be delivered yet. Your choices are kept and apply as soon as an operator sets <code>Bindery:Notifications:Email</code>.</p>
+    }
+
+    <form method="post" asp-page-handler="Preferences" class="plugin-form">
+        <div class="field">
+            <label for="notify-email">Email address</label>
+            <input id="notify-email" class="control" type="email" name="email" value="@Model.Preferences.Email" autocomplete="email" />
+        </div>
+        <div class="field">
+            <label class="field-check" for="notify-enabled">
+                <input id="notify-enabled" type="checkbox" name="emailEnabled" value="true" checked="@Model.Preferences.EmailEnabled" />
+                <span>Send me email</span>
+            </label>
+        </div>
+
+        @foreach (var group in NotificationCategories.All.GroupBy(category => category.Group))
+        {
+            <fieldset class="notify-group">
+                <legend>@group.Key</legend>
+                @foreach (var category in group)
+                {
+                    <label class="field-check notify-option" for="cat-@category.Key">
+                        <input id="cat-@category.Key" type="checkbox" name="categories" value="@category.Key" checked="@(!Model.Preferences.IsMuted(category.Key))" />
+                        <span><strong>@category.Label</strong> <small class="field-help">@category.Description</small></span>
+                    </label>
+                }
+            </fieldset>
+        }
+
+        <div class="form-actions">
+            <button class="button button-primary" type="submit"><span>Save notification settings</span></button>
+        </div>
+    </form>
+
+    <form method="post" asp-page-handler="Test" class="plugin-refresh">
+        <button class="text-action" type="submit">Send me a test message</button>
+    </form>
+
+    @if (Model.Recent.Count > 0)
+    {
+        <h3 class="notify-recent-heading">Recent messages</h3>
+        <ul class="notify-recent">
+            @foreach (var message in Model.Recent)
+            {
+                <li data-status="@message.Status.ToString().ToLowerInvariant()">
+                    <time datetime="@message.CreatedAt.ToString("O")">@message.CreatedAt.ToLocalTime().ToString("d MMM HH:mm")</time>
+                    <span>@message.Subject</span>
+                    <em>@message.Status.ToString().ToLowerInvariant()@(message.Status == NotificationStatus.Sent || message.LastError is null ? null : $" — {message.LastError}")</em>
+                </li>
+            }
+        </ul>
+    }
+</section>
+
+@functions {
+    private static string CirculationAccountStoreCount(CirculationAccountEntity account)
+    {
+        var count = Bindery.Host.Circulation.CirculationAccountStore.PickupLocations(account).Count;
+        return count == 0 ? "library default" : count.ToString();
+    }
+}
