@@ -67,6 +67,40 @@ public sealed class PluginTests(BinderyFixture fixture)
     }
 
     [Fact]
+    public async Task Every_page_links_settings_library_cards_and_each_plugin_from_the_rail()
+    {
+        var name = fixture.Plugin.Name;
+        var html = await fixture.Client.GetStringAsync("/");
+
+        Assert.Contains("href=\"/settings\"", html, StringComparison.Ordinal);
+        Assert.Contains("href=\"/library-cards\"", html, StringComparison.Ordinal);
+        Assert.Contains($"href=\"/plugins/{name}\"", html, StringComparison.Ordinal);
+
+        // One entry per plugin, not one per screen: the plugin's own nav lives in its tabs.
+        Assert.DoesNotContain($"/plugins/{name}/ui/", html, StringComparison.Ordinal);
+
+        // The hub is still where the old Plugins page was, and leads to each plugin's tab.
+        var hub = await fixture.Client.GetStringAsync("/plugins");
+        Assert.Contains($"href=\"/plugins/{name}/settings\"", hub, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_plugin_desk_has_a_settings_tab_beside_the_plugins_own_screens()
+    {
+        var name = fixture.Plugin.Name;
+        var desk = await fixture.Client.GetStringAsync($"/plugins/{name}");
+
+        Assert.Contains($"href=\"/plugins/{name}/settings\"", desk, StringComparison.Ordinal);
+        Assert.Contains($"href=\"/plugins/{name}/ui/\"", desk, StringComparison.Ordinal);
+
+        using var settings = await fixture.Client.GetAsync($"/plugins/{name}/settings");
+        Assert.Equal(HttpStatusCode.OK, settings.StatusCode);
+
+        using var missing = await fixture.Client.GetAsync("/plugins/nobody-configured-this/settings");
+        Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+    }
+
+    [Fact]
     public async Task A_browser_navigation_to_the_proxy_lands_on_the_plugin_page()
     {
         using var response = await fixture.Client.GetAsync($"/plugins/{fixture.Plugin.Name}/ui/settings");

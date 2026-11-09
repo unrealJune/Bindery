@@ -347,6 +347,15 @@ time, data, .folio, .tally, .digest, .pager-position { font-variant-numeric: tab
 .app-frame,
 .site-footer { position: relative; z-index: 1; }
 
+/*
+    The mobile island is fixed *inside* the frame, so its z-index only ranks it within the
+    frame's stacking context. The frame must therefore stack above the footer that follows
+    it: at an equal z-index the later footer wins, and its transparent, island-clearing
+    bottom padding sat over the island and swallowed every tap on short pages and at the
+    bottom of long ones.
+*/
+.app-frame { z-index: 2; }
+
 .masthead {
     position: sticky;
     top: 0;
@@ -1840,6 +1849,41 @@ form > label {
 }
 
 .plugin-desk-link { margin-top: var(--s6); }
+
+.desk-tabs + .plugin-docket { margin-top: var(--gutter); }
+
+.plugin-about { margin: 0 0 var(--s5); color: var(--ink-muted); }
+
+/* The settings hub: one row per thing to set up, each a link with a line on what it is. */
+.settings-index {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.settings-index li {
+    display: grid;
+    grid-template-columns: minmax(10rem, 14rem) minmax(0, 1fr) auto;
+    gap: var(--s3) var(--s6);
+    align-items: baseline;
+    padding: var(--s4) 0;
+    border-top: 1px solid var(--hairline-soft);
+}
+
+.settings-index li > a:first-child {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s3);
+    color: var(--ink-strong);
+    font-weight: 600;
+}
+
+.settings-index li > span { color: var(--ink-muted); }
+
+@media (max-width: 40rem) {
+    .settings-index li { grid-template-columns: minmax(0, 1fr) auto; }
+    .settings-index li > span { grid-column: 1 / -1; grid-row: 2; }
+}
 
 .desk-tabs {
     display: flex;

@@ -7,36 +7,49 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 namespace Bindery.Host.Pages;
 
 /// <summary>
-/// Tier 1 of the UI story: every plugin gets a settings form and an action form rendered
-/// from its manifest, whether or not it ships any HTML of its own.
+/// One plugin's settings tab. Tier 1 of the UI story: every plugin gets a settings form and
+/// an action form rendered from its manifest, whether or not it ships any HTML of its own.
 /// </summary>
 /// <remarks>
 /// Settings come in two sections, by the field's manifest scope (protocol §4.1). The
 /// installation's are an admin's to see and change; everyone gets "your settings" for the
 /// user-scoped fields, and sees only their own values there.
 /// </remarks>
-public sealed class PluginsModel(
+public sealed class PluginSettingsModel(
     PluginRegistry registry,
     PluginSettingsStore settings,
-    PluginActionService actions) : PageModel
+    PluginActionService actions,
+    PluginUiProxy proxy) : PageModel
 {
     /// <summary>The form value that selects the personal section; anything else is install.</summary>
     public const string PersonalScope = "user";
 
-    public IReadOnlyList<PluginCard> Cards { get; private set; } = [];
+    public PluginCard Card { get; private set; } = default!;
+
+    public IReadOnlyList<PluginNavEntry> Nav { get; private set; } = [];
 
     public bool IsAdmin => Identity.IsAdmin(User);
 
-    public async Task OnGetAsync(CancellationToken cancellationToken) => await LoadAsync(cancellationToken);
+    public async Task<IActionResult> OnGetAsync(string name, CancellationToken cancellationToken)
+    {
+        if (registry.Find(name) is not { } descriptor)
+        {
+            return NotFound();
+        }
 
-    public async Task<IActionResult> OnPostRefreshAsync(string plugin, CancellationToken cancellationToken)
+        Nav = descriptor.IsUsable ? proxy.NavigationFor(descriptor, IsAdmin) : [];
+        Card = await LoadAsync(descriptor, cancellationToken);
+        return Page();
+    }
+
+    public async Task<IActionResult> OnPostRefreshAsync(string name, CancellationToken cancellationToken)
     {
         if (!IsAdmin)
         {
             return Forbid();
         }
 
-        var descriptor = registry.Find(plugin);
+        var descriptor = registry.Find(name);
 
         if (descriptor is null)
         {
@@ -52,9 +65,9 @@ public sealed class PluginsModel(
         return RedirectToPage();
     }
 
-    public async Task<IActionResult> OnPostSaveAsync(string plugin, string? scope, CancellationToken cancellationToken)
+    public async Task<IActionResult> OnPostSaveAsync(string name, string? scope, CancellationToken cancellationToken)
     {
-        var descriptor = registry.Find(plugin);
+        var descriptor = registry.Find(name);
 
         if (descriptor?.Manifest is null)
         {
@@ -84,9 +97,9 @@ public sealed class PluginsModel(
         return RedirectToPage();
     }
 
-    public async Task<IActionResult> OnPostClearAsync(string plugin, string key, string? scope, CancellationToken cancellationToken)
+    public async Task<IActionResult> OnPostClearAsync(string name, string key, string? scope, CancellationToken cancellationToken)
     {
-        if (registry.Find(plugin) is null)
+        if (registry.Find(name) is null)
         {
             return NotFound();
         }
@@ -96,7 +109,7 @@ public sealed class PluginsModel(
             return Forbid();
         }
 
-        await settings.ClearAsync(plugin, key, section.Owner, cancellationToken);
+        await settings.ClearAsync(name, key, section.Owner, cancellationToken);
         TempData["Notice"] = "Value cleared.";
         return RedirectToPage();
     }
@@ -105,9 +118,9 @@ public sealed class PluginsModel(
     /// Runs a declared action and swaps only its result panel back, so a long search does
     /// not reload the whole page.
     /// </summary>
-    public async Task<IActionResult> OnPostRunAsync(string plugin, string action, CancellationToken cancellationToken)
+    public async Task<IActionResult> OnPostRunAsync(string name, string action, CancellationToken cancellationToken)
     {
-        var declared = actions.FindAction(plugin, action);
+        var declared = actions.FindAction(name, action);
 
         if (declared is null)
         {
@@ -117,7 +130,7 @@ public sealed class PluginsModel(
         var input = Collect(declared.Input.AsList())
             .ToDictionary(pair => pair.Key, pair => pair.Value ?? string.Empty, StringComparer.Ordinal);
 
-        var result = await actions.InvokeAsync(plugin, action, input, Person.Of(User), cancellationToken);
+        var result = await actions.InvokeAsync(name, action, input, Person.Of(User), cancellationToken);
 
         return Partial("_ActionResult", result);
     }
@@ -161,33 +174,29 @@ public sealed class PluginsModel(
         return submitted;
     }
 
-    private async Task LoadAsync(CancellationToken cancellationToken)
+    private async Task<PluginCard> LoadAsync(PluginDescriptor descriptor, CancellationToken cancellationToken)
     {
         var person = Person.Of(User);
-        var empty = new PluginSettingsView(new Dictionary<string, string>(), new HashSet<string>());
-        var cards = new List<PluginCard>();
 
-        foreach (var descriptor in registry.All)
+        if (descriptor.Manifest is not { } manifest)
         {
-            var manifest = descriptor.Manifest;
-
-            if (manifest is null)
-            {
-                cards.Add(new PluginCard(descriptor, null, empty, []));
-                continue;
-            }
-
-            var install = person.IsAdmin
-                ? await settings.GetForDisplayAsync(manifest, null, cancellationToken)
-                : null;
-            var mine = await settings.GetForDisplayAsync(manifest, person.Subject, cancellationToken);
-
-            cards.Add(new PluginCard(descriptor, install, mine, PluginActionService.AvailableTo(manifest, person)));
+            return new PluginCard(descriptor, null, new PluginSettingsView(new Dictionary<string, string>(), new HashSet<string>()), []);
         }
 
-        Cards = cards;
+        var install = person.IsAdmin
+            ? await settings.GetForDisplayAsync(manifest, null, cancellationToken)
+            : null;
+        var mine = await settings.GetForDisplayAsync(manifest, person.Subject, cancellationToken);
+
+        return new PluginCard(descriptor, install, mine, PluginActionService.AvailableTo(manifest, person));
     }
 }
+
+/// <param name="CurrentPath">The plugin screen showing; null when it is the settings tab.</param>
+public sealed record PluginTabsView(
+    PluginDescriptor Descriptor,
+    IReadOnlyList<PluginNavEntry> Nav,
+    string? CurrentPath);
 
 /// <param name="Install">The installation's settings; null unless the viewer is an admin.</param>
 /// <param name="Mine">The viewer's own values for the user-scoped fields.</param>

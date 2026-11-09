@@ -54,9 +54,16 @@ public sealed class PluginDeskModel(
     {
         var descriptor = registry.Find(name);
 
-        if (descriptor is null || !descriptor.IsUsable || descriptor.Manifest?.Ui.Mode.ServesHtml != true)
+        if (descriptor is null)
         {
             return NotFound();
+        }
+
+        // A plugin with no screens of its own — declarative, or not answering — still has a
+        // settings tab, so a link to it lands there rather than on a dead end.
+        if (!descriptor.IsUsable || descriptor.Manifest?.Ui.Mode.ServesHtml != true)
+        {
+            return Redirect(PluginLinks.Settings(descriptor.Name));
         }
 
         Descriptor = descriptor;

@@ -1,12 +1,12 @@
 @page
 @model LibraryModel
 @{
-    ViewData["Title"] = "Library";
+    ViewData["Title"] = "Shelf";
     var query = Model.Query ?? string.Empty;
 }
 
 <header class="page-heading">
-    <h1>Register of filed books</h1>
+    <h1>Your shelf</h1>
     @if (Model.CanScan)
     {
         <form method="post" asp-page-handler="Scan">

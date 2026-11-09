@@ -120,8 +120,8 @@
             <summary>Withdraw from your shelf</summary>
             <p>
                 This takes <strong>@book.Title</strong> off your shelf. If nobody else keeps it,
-                every file filed with it is deleted from the library volume — the files are the
-                library, so there is nothing to restore from
+                every file filed with it is deleted from disk — the files are the shelf's only
+                copy, so there is nothing to restore from
                 afterwards@(book.SourceUrl.HasValue() ? " — though the source can be filed again from Intake." : ".")
             </p>
             <form method="post" asp-page-handler="Delete" asp-route-id="@book.Id">

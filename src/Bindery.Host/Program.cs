@@ -13,6 +13,7 @@ using Bindery.Host.Ui;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.Mvc.ApplicationModels;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -106,6 +107,12 @@ builder.Services.AddRazorPages(razor =>
     razor.Conventions.AllowAnonymousToPage("/Signin");
     razor.Conventions.AllowAnonymousToPage("/Denied");
     razor.Conventions.AllowAnonymousToPage("/Error");
+    // The settings hub was the Plugins page; keep the old address working, but never
+    // generate links to it.
+    razor.Conventions.AddPageRouteModelConvention("/Settings", page => page.Selectors.Add(new SelectorModel
+    {
+        AttributeRouteModel = new AttributeRouteModel { Template = "plugins", SuppressLinkGeneration = true }
+    }));
 });
 
 builder.Services.AddAntiforgery(antiforgery =>

@@ -502,14 +502,60 @@ public sealed class MultiUserTests(BinderyFixture fixture)
         using var bob = fixture.ClientFor("bob");
         using var admin = fixture.ClientFor("dev", admin: true);
 
-        var member = await bob.GetStringAsync("/plugins");
+        var page = $"/plugins/{fixture.Plugin.Name}/settings";
+
+        var member = await bob.GetStringAsync(page);
         Assert.Contains("Your login", member, StringComparison.Ordinal);
         Assert.DoesNotContain("Pretend API key", member, StringComparison.Ordinal);
         Assert.DoesNotContain("Author to report", member, StringComparison.Ordinal);
 
-        var both = await admin.GetStringAsync("/plugins");
+        var both = await admin.GetStringAsync(page);
         Assert.Contains("Your login", both, StringComparison.Ordinal);
         Assert.Contains("Author to report", both, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Saving_your_settings_on_a_plugins_settings_page_keeps_them_yours()
+    {
+        using var carol = fixture.ClientFor("carol");
+        var page = $"/plugins/{fixture.Plugin.Name}/settings";
+
+        using var form = await carol.GetAsync(page);
+        var html = await form.Content.ReadAsStringAsync();
+        var token = System.Text.RegularExpressions.Regex.Match(
+            html, "name=\"__RequestVerificationToken\" type=\"hidden\" value=\"([^\"]+)\"").Groups[1].Value;
+        var cookie = form.Headers.GetValues("Set-Cookie")
+            .First(header => header.StartsWith("bindery.antiforgery=", StringComparison.Ordinal))
+            .Split(';')[0];
+
+        using var post = new HttpRequestMessage(HttpMethod.Post, page + "?handler=Save")
+        {
+            Content = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["__RequestVerificationToken"] = token,
+                ["scope"] = Pages.PluginSettingsModel.PersonalScope,
+                ["field:reader_login"] = "carols-login"
+            })
+        };
+        post.Headers.Add("Cookie", cookie);
+
+        try
+        {
+            using var saved = await carol.SendAsync(post);
+
+            Assert.Equal(HttpStatusCode.Redirect, saved.StatusCode);
+            Assert.Equal(page, saved.Headers.Location?.ToString());
+
+            using var scope = fixture.CreateScope();
+            var store = scope.ServiceProvider.GetRequiredService<PluginSettingsStore>();
+            var manifest = scope.ServiceProvider.GetRequiredService<PluginRegistry>().Find(fixture.Plugin.Name)!.Manifest!;
+
+            Assert.Equal("carols-login", (await store.GetForPluginAsync(manifest, "carol", CancellationToken.None))["reader_login"]);
+        }
+        finally
+        {
+            await DeleteSettingAsync("reader_login");
+        }
     }
 
     [Fact]

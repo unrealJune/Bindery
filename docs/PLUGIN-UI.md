@@ -82,7 +82,7 @@ None of that depends on Bindery parsing anything correctly.
 |---|---|---|
 | `mode` | no | `declarative` (default), `sandboxed`, or `fragment`. An unrecognized value is treated as `declarative`. |
 | `entry` | no | Path loaded when the user opens the plugin with no path. Default `/`. |
-| `nav` | no | Entries Bindery links in its own chrome, pointing at `/plugins/{name}/ui{path}`. An entry's `access` (`member` by default, or `admin`) decides who sees the link. |
+| `nav` | no | The plugin's screens, shown as tabs on its page at `/plugins/{name}`. Bindery adds a **Settings** tab of its own (`/plugins/{name}/settings`, the manifest-rendered settings and actions); entries with `"section": "settings"` are placed after it, so all of a plugin's configuration sits together. The sidebar carries one entry per plugin, not one per screen. An entry's `access` (`member` by default, or `admin`) decides who sees the tab. |
 | `adminPaths` | no | Path prefixes only admins may reach. The proxy answers anyone else `403` without forwarding. |
 
 Anything not declared in `nav` is still reachable — it just is not linked from the chrome.
