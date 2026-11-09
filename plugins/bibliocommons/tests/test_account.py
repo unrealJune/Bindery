@@ -52,6 +52,9 @@ def gateway(payload):
     return Response(200, "https://gateway", json.dumps(payload).encode("utf-8"))
 
 
+STATE_ONE_ACCOUNT = ('<script>window.__STATE__={"entities":{"accounts":{"987654":{"id":987654,'
+                     '"barcode":"1000012345678","libId":246}}}}</script>')
+
 BIBS = {
     "S246C1": {"id": "S246C1", "briefInfo": {"title": "Dune", "authors": ["Herbert, Frank"], "format": "BK",
                                              "superFormats": ["BOOKS"]},
@@ -152,6 +155,22 @@ class Snapshot(unittest.TestCase):
             account.snapshot(session)
 
 
+class LiveShape(unittest.TestCase):
+    def test_the_live_borrowing_envelope_is_paged(self):
+        # Live gateway (Seattle, KCLS): the list is ``borrowing.<kind>.{items, pagination}``.
+        # Ignoring it dropped the pagination, so page 2 would never have been read.
+        def holds(number):
+            return gateway({"entities": {"holds": {f"h{number}": {"holdsId": f"h{number}", "metadataId": "S246C1",
+                                                                  "status": "ACTIVE"}}, "bibs": BIBS},
+                            "borrowing": {"holds": {"items": [f"h{number}"],
+                                                    "pagination": {"count": 2, "page": number, "limit": 1, "pages": 2}}}})
+        session = session_with([
+            ("page=1", holds(1)), ("page=2", holds(2)),
+            ("/checkouts", gateway({"entities": {"checkouts": {}}, "borrowing": {"checkouts": {
+                "items": [], "pagination": {"count": 0, "page": 1, "limit": 50, "pages": 0}}}}))])
+        self.assertEqual(["h1", "h2"], [h["id"] for h in account.snapshot(session)["holds"]])
+
+
 class SignIn(unittest.TestCase):
     def test_a_refused_pin_is_auth_required(self):
         browser = FakeBrowser([("/user/login", page(LOGIN_PAGE, "https://seattle.bibliocommons.com/user/login"))])
@@ -164,7 +183,7 @@ class SignIn(unittest.TestCase):
     def test_a_good_sign_in_posts_the_form_and_finds_the_account(self):
         def post(method, url, kwargs):
             browser.cookies["bc_access_token"] = "tkn"
-            return page('<script>window.__STATE__={"accountId":987654}</script>')
+            return page(STATE_ONE_ACCOUNT)
         browser = FakeBrowser([("/user/login", ("GET", page(LOGIN_PAGE))), ("/user/login", ("POST", post))])
 
         with mock.patch.object(account, "Browser", return_value=browser):
@@ -194,7 +213,7 @@ class SignIn(unittest.TestCase):
         # fragment whose markup is escaped and has no form token. Verified against live Seattle.
         def post(method, url, kwargs):
             browser.cookies["bc_access_token"] = "tkn"
-            return page('<script>window.__STATE__={"accountId":987654}</script>')
+            return page(STATE_ONE_ACCOUNT)
         browser = FakeBrowser([("/user/login", ("GET", page(LOGIN_PAGE))), ("/user/login", ("POST", post))])
 
         with mock.patch.object(account, "Browser", return_value=browser):
@@ -221,6 +240,45 @@ class SignIn(unittest.TestCase):
             session = account.login(SPL, "1000012345678", "1234", "f")
 
         self.assertEqual("222222", session.account_id)
+
+    def _sign_in(self, state, card="1000012345678"):
+        def post(method, url, kwargs):
+            browser.cookies["bc_access_token"] = "tkn"
+            return page(state)
+        browser = FakeBrowser([("/user/login", ("GET", page(LOGIN_PAGE))), ("/user/login", ("POST", post))])
+        with mock.patch.object(account, "Browser", return_value=browser):
+            return account.login(SPL, card, "1234", "f")
+
+    def test_the_account_is_the_one_whose_barcode_is_the_card(self):
+        # Live KCLS: a user whose home library is Seattle also holds a KCLS account. The
+        # first listed account is Seattle's; asking the KCLS gateway for it, or for the
+        # Syndetics "accountId" below, answers 500.
+        state = ('<script>{"syndeticsUnbound":{"isEnabled":true,"accountId":"4640"},'
+                 '"entities":{"accounts":{"111111":{"id":111111,"barcode":"2000000000001","libId":246},'
+                 '"222222":{"id":222222,"barcode":"1000012345678","libId":82}},'
+                 '"users":{"9":{"accounts":[111111,222222]}}}}</script>')
+        self.assertEqual("222222", self._sign_in(state).account_id)
+
+    def test_the_syndetics_widget_id_is_never_an_account(self):
+        state = '<script>{"syndeticsUnbound":{"isEnabled":true,"accountId":"4640","instanceId":""}}</script>'
+        browser = FakeBrowser([("/user/login", ("GET", page(LOGIN_PAGE))),
+                               ("/user/login", ("POST", lambda m, u, k: browser.cookies.update(bc_access_token="t") or page(state))),
+                               ("/v2/holds", page(state))])
+        with mock.patch.object(account, "Browser", return_value=browser):
+            with self.assertRaises(SiteError) as caught:
+                account.login(SPL, "1000012345678", "1234", "f")
+        self.assertEqual("parse", caught.exception.code)
+
+    def test_several_accounts_and_none_matching_is_ambiguous_not_a_guess(self):
+        state = ('<script>{"accounts":{"1":{"id":1,"barcode":"2000000000001"},'
+                 '"2":{"id":2,"barcode":"2000000000002"}}}</script>')
+        browser = FakeBrowser([("/user/login", ("GET", page(LOGIN_PAGE))),
+                               ("/user/login", ("POST", lambda m, u, k: browser.cookies.update(bc_access_token="t") or page(state))),
+                               ("/v2/holds", page(state))])
+        with mock.patch.object(account, "Browser", return_value=browser):
+            with self.assertRaises(SiteError) as caught:
+                account.login(SPL, "1000012345678", "1234", "f")
+        self.assertEqual("parse", caught.exception.code)
 
     def test_no_account_anywhere_is_a_parse_error(self):
         def post(method, url, kwargs):
