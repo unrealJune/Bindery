@@ -93,13 +93,15 @@ def is_challenge(status: int, headers) -> bool:
 
 
 def _probe(url: str) -> bool:
-    request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Accept": "text/html"})
     try:
+        request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Accept": "text/html"})
         with urllib.request.urlopen(request, timeout=CHALLENGE_TIMEOUT) as reply:
             return is_challenge(reply.status, reply.headers)
     except urllib.error.HTTPError as refused:
-        return is_challenge(refused.code, refused.headers)
-    except Exception:  # noqa: BLE001 - a diagnosis that fails changes nothing
+        with refused:
+            return is_challenge(refused.code, refused.headers)
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        log.warning("could not diagnose the browser challenge (%s); keeping the original error", type(exc).__name__)
         return False
 
 
@@ -108,17 +110,18 @@ async def explain(error: FffError, url: str) -> FffError:
 
     FanFicFare reports both as a bare 403, and the challenge page never reaches its output,
     so one plain request to the same URL is how to know. A bot check is not the person's
-    credentials and nothing in their settings will fix it; it is reported as the site being
-    unreachable, which the host retries with backoff in case the check is lifted. This only
-    diagnoses — it makes no attempt to pass the check.
+    credentials; separate browser integrations are documented in the README. This only
+    diagnoses the failure and makes no attempt to pass the check.
     """
     if error.code != "auth_required" or "403" not in error.message:
         return error
     if not await asyncio.to_thread(_probe, url):
         return error
     host = urllib.parse.urlsplit(url).hostname or "the site"
-    return FffError("network", f"{host} is showing automated downloads a Cloudflare bot check, which "
-                          "FanFicFare cannot pass. This is the site, not your settings or login.")
+    message = f"{host} is showing automated downloads a Cloudflare bot check. This downloader was blocked, not a confirmed login failure."
+    if host in ("royalroad.com", "www.royalroad.com"):
+        message += " Use Calibre's FanFicFare/Camoufox integration, then upload the EPUB through Intake (see the plugin README)."
+    return FffError("network", message)
 
 
 def _best_line(text: str, pattern) -> str:
