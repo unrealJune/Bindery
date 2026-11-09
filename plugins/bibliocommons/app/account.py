@@ -9,8 +9,9 @@ no credentials were used while writing it. What *is* verified:
 - that ``GET {gateway}/holds?accountId=…`` and ``GET {gateway}/checkouts?accountId=…`` exist
   and answer ``401 invalid_token`` without a session.
 
-Verified end to end against a live Seattle Public Library account (Nov 2026): sign-in, the
-account id (``STATE_ACCOUNT_RE``: it is *not* the user id), the opaque ``bc_access_token`` /
+Verified end to end against live Seattle Public Library and King County Library System
+accounts (Nov 2026): sign-in, the
+account id (``_account_id``: it is *not* the user id, and is picked by the card's barcode), the opaque ``bc_access_token`` /
 ``session_id`` cookies accepted as ``X-Access-Token`` / ``X-Session-Id``, and the holds and
 checkouts listings. Not yet exercised live: loans (the test account had none) and the
 place / cancel / suspend writes.
@@ -20,8 +21,6 @@ can be corrected in one place against a real account:
 
 - the session is carried by the ``bc_access_token`` and ``session_id`` cookies, which the
   gateway also accepts as ``X-Access-Token`` / ``X-Session-Id`` headers;
-- the account id appears in the signed-in dashboard as ``"accountId":NNN`` (or in the
-  access token's claims);
 - the shapes of the holds and checkouts entities, and of the place/cancel bodies.
 
 Every read below therefore tries several plausible keys and falls back conservatively, and
@@ -64,12 +63,20 @@ def find_token(page: str) -> Optional[str]:
     tag = TOKEN_INPUT_RE.search(page)
     value = TOKEN_VALUE_RE.search(tag.group(0)) if tag else None
     return value.group(1) if value else None
-ACCOUNT_ID_RE = re.compile(r'"accountId"\s*:\s*"?(\d+)"?')
-# Verified against live Seattle pages: the user id and the *account* id are different numbers,
-# and the gateway answers 500 if given the user id. The /v2/ pages embed the redux state, in
-# which the signed-in user lists its accounts: ``"users":{"<uid>":{...,"accounts":[<account>]``.
+# The /v2/ pages embed the redux state. Verified against live Seattle and KCLS pages:
+#
+# - the user id and the *account* id are different numbers, and the gateway answers 500 if
+#   given anything but a real account id;
+# - one BiblioCommons *user* can hold accounts at several libraries (a friend's KCLS card
+#   attached to a user whose home library is Seattle), so "the user's first account" is
+#   the wrong library about as often as it is the right one. Each entry of the state's
+#   ``accounts`` table carries the card's ``barcode`` and the library's ``libId``; the card
+#   that was just used to sign in is the one to pick;
+# - a bare ``"accountId":"NNNN"`` also appears on the page, but it is the Syndetics cover-art
+#   widget's configuration, not the patron's. Never match on that key.
+#
 # Access-token cookies are opaque (not JWTs), so there is no claim to read it from.
-STATE_ACCOUNT_RE = re.compile(r'"users"\s*:\s*\{\s*"\d+"\s*:\s*\{[^}]*?"accounts"\s*:\s*\[\s*(\d+)')
+STATE_ACCOUNTS_RE = re.compile(r'"accounts"\s*:\s*(?=\{\s*"\d+"\s*:\s*\{)')
 
 # BiblioCommons hold statuses → protocol hold states.
 HOLD_STATES = {
@@ -173,22 +180,31 @@ def login(library: Library, card: str, pin: str, fingerprint: str) -> Session:
     if not signed_in or "/user/login" in reply.url and 'name="user_pin"' in reply.text:
         raise SiteError("auth_required", "the library did not accept that card number and PIN")
 
-    account_id = _account_id(browser, reply.text)
+    account_id = _account_id(browser, reply.text, card)
     if not account_id:
         # The legacy dashboard carries no account; the /v2/ pages embed the state that does.
         state = browser.request("GET", f"{library.catalog}/v2/holds", headers=HTML_HEADERS)
-        account_id = _account_id(browser, state.text)
+        account_id = _account_id(browser, state.text, card)
     if not account_id:
-        raise SiteError("parse", "signed in, but could not find the account id on the dashboard")
+        raise SiteError("parse", "signed in, but could not find this card's account id on the dashboard")
 
     log.info("signed in to %s", library.slug)  # never the card number
     return Session(library=library, browser=browser, account_id=account_id, fingerprint=fingerprint)
 
 
-def _account_id(browser: Browser, dashboard: str) -> Optional[str]:
-    match = ACCOUNT_ID_RE.search(dashboard) or STATE_ACCOUNT_RE.search(dashboard)
-    if match:
-        return match.group(1)
+def _account_id(browser: Browser, dashboard: str, card: str) -> Optional[str]:
+    """The id of the account that belongs to ``card``, or None. Never a guess."""
+    accounts = _state_accounts(dashboard)
+    for account_id, entry in accounts.items():
+        if re.sub(r"\s+", "", str(entry.get("barcode") or "")) == card:
+            return account_id
+    # A single account needs no matching (the barcode may be formatted differently); several
+    # that none of match is ambiguous, and the wrong one reads someone else's library.
+    if len(accounts) == 1:
+        return next(iter(accounts))
+    if accounts:
+        return None
+
     token = browser.cookie("bc_access_token")
     if token and token.count(".") == 2:
         try:
@@ -200,6 +216,21 @@ def _account_id(browser: Browser, dashboard: str) -> Optional[str]:
         except (ValueError, json.JSONDecodeError):
             pass
     return None
+
+
+def _state_accounts(page: str) -> Dict[str, dict]:
+    """The ``accounts`` table of the redux state embedded in a /v2/ page, keyed by account id."""
+    decoder = json.JSONDecoder()
+    for match in STATE_ACCOUNTS_RE.finditer(page):
+        try:
+            table, _ = decoder.raw_decode(page, match.end())
+        except json.JSONDecodeError:
+            continue
+        if isinstance(table, dict):
+            found = {str(k): v for k, v in table.items() if isinstance(v, dict)}
+            if found:
+                return found
+    return {}
 
 
 # ---------------------------------------------------------------- reading the account
@@ -233,8 +264,11 @@ def _collect(session: Session, kind: str) -> Tuple[List[dict], Dict[str, dict]]:
             raise SiteError("parse", f"the library's {kind} list has an unexpected shape")
         bibs.update({k: v for k, v in (entities.get("bibs") or {}).items() if isinstance(v, dict)})
 
-        listing = body.get(kind) or {}
-        order = listing.get("results") if isinstance(listing, dict) else None
+        # Live gateway: ``borrowing.<kind>.{items, pagination}``. The top-level ``<kind>.results``
+        # shape is kept for older responses. Reading only the latter lost the pagination, so a
+        # card with more than one page would have been reported as complete after the first.
+        listing = (body.get("borrowing") or {}).get(kind) or body.get(kind) or {}
+        order = (listing.get("items") or listing.get("results")) if isinstance(listing, dict) else None
         ids = [str(i) for i in order] if isinstance(order, list) else list(table.keys())
         for entry_id in ids:
             entry = table.get(entry_id)
