@@ -15,6 +15,9 @@ import logging
 import os
 import re
 import shlex
+import urllib.error
+import urllib.parse
+import urllib.request
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
@@ -32,6 +35,7 @@ ERROR_PATTERNS = [
     (re.compile(r"story does not exist", re.I), "not_found", False),
     (re.compile(r"bad story url|unknown site", re.I), "unsupported_url", False),
     (re.compile(r"failed to login|login failed|password required", re.I), "auth_required", False),
+    (re.compile(r"access denied|forbidden|\b403\b", re.I), "auth_required", False),
     (re.compile(r"429|too many requests|rate.?limit", re.I), "rate_limited", True),
     (re.compile(r"timed out|timeout|connection (reset|refused|aborted)|dns", re.I), "network", True),
     (re.compile(r"http error 5\d\d|bad gateway|service unavailable", re.I), "network", True),
@@ -60,6 +64,48 @@ def classify(output: str) -> RoyalRoadError:
                 if pattern.search(line):
                     return RoyalRoadError(code, line.strip()[:400], retryable)
     return RoyalRoadError("internal", "FanFicFare failed without a recognizable reason")
+
+
+# ---------------------------------------------------------------- bot checks
+
+CHALLENGE_TIMEOUT = 10.0
+
+
+def is_challenge(status: int, headers) -> bool:
+    """Cloudflare's "Just a moment..." interstitial, by the header it marks it with."""
+    return status in (403, 503) and (headers.get("cf-mitigated") or "").lower() == "challenge"
+
+
+def _probe(url: str) -> bool:
+    try:
+        request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Accept": "text/html"})
+        with urllib.request.urlopen(request, timeout=CHALLENGE_TIMEOUT) as reply:
+            return is_challenge(reply.status, reply.headers)
+    except urllib.error.HTTPError as refused:
+        with refused:
+            return is_challenge(refused.code, refused.headers)
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        log.warning("could not diagnose the browser challenge (%s); keeping the original error", type(exc).__name__)
+        return False
+
+
+async def explain(error: RoyalRoadError, url: str) -> RoyalRoadError:
+    """Tell a site's bot check apart from a refused login.
+
+    FanFicFare reports both as a bare 403, and the challenge page never reaches its output,
+    so one plain request to the same URL is how to know. A bot check is not the person's
+    credentials; separate browser integrations are documented in the README. This only
+    diagnoses the failure and makes no attempt to pass the check.
+    """
+    if error.code != "auth_required" or "403" not in error.message:
+        return error
+    if not await asyncio.to_thread(_probe, url):
+        return error
+    host = urllib.parse.urlsplit(url).hostname or "the site"
+    message = f"{host} is showing automated downloads a Cloudflare bot check. This downloader was blocked, not a confirmed login failure."
+    if host in ("royalroad.com", "www.royalroad.com"):
+        message += " Use Calibre's FanFicFare/Camoufox integration, then upload the EPUB through Intake (see the plugin README)."
+    return RoyalRoadError("network", message)
 
 
 # ---------------------------------------------------------------- classification

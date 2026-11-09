@@ -200,7 +200,7 @@ async def run_action(action: str, body: ActionRequest) -> dict:
         urls = [line.strip() for line in result.stdout.splitlines()
                 if line.strip().startswith(("http://", "https://"))]
         if not urls:
-            error = fff.classify(result.output)
+            error = await fff.explain(fff.classify(result.output), url)
             if result.returncode == 0 and error.code == "internal":
                 return {"status": "ok", "output": {"kind": "list", "items": []}}
             return {"status": "error", "error": {"code": error.code, "message": error.message,
@@ -340,7 +340,7 @@ async def _download_phases(body: DownloadRequest, job, request: Request):
     meta_run = await fff.run(fff.meta_args(url, ini_files), job.workdir, timeout=META_TIMEOUT)
     raw_meta = _parse_json(meta_run.stdout)
     if raw_meta is None:
-        raise fff.classify(meta_run.output)
+        raise await fff.explain(fff.classify(meta_run.output), url)
 
     metadata = fff.map_metadata(raw_meta, url)
     chapters = metadata.get("chapters") or 1
@@ -380,7 +380,8 @@ async def _download_phases(body: DownloadRequest, job, request: Request):
                 raise asyncio.CancelledError()
 
     if finished is None or not os.path.exists(out_path):
-        raise fff.classify(finished.output if finished else "FanFicFare produced no output file")
+        raise await fff.explain(
+            fff.classify(finished.output if finished else "FanFicFare produced no output file"), url)
 
     yield _event({"event": "progress", "percent": 96, "message": "packaging"})
 

@@ -364,7 +364,7 @@ async def _fetch_and_ingest(work, rr_url: str, config: dict, job, timeout: float
     meta_run = await royalroad.run(royalroad.meta_args(rr_url, ini_files), job.workdir, META_TIMEOUT)
     raw = _parse_json(meta_run.stdout)
     if raw is None:
-        raise royalroad.classify(meta_run.output)
+        raise await royalroad.explain(royalroad.classify(meta_run.output), rr_url)
     metadata = royalroad.map_metadata(raw, rr_url)
     store.update_work(work.id, title=metadata.get("title"), author=metadata.get("author", ""),
                       source_id=metadata.get("sourceId"))
@@ -376,7 +376,7 @@ async def _fetch_and_ingest(work, rr_url: str, config: dict, job, timeout: float
     out_path = os.path.join(job.workdir, out_relative)
     dl = await royalroad.run(royalroad.download_args(rr_url, ini_files, out_relative), job.workdir, timeout)
     if not os.path.exists(out_path):
-        raise royalroad.classify(dl.output)
+        raise await royalroad.explain(royalroad.classify(dl.output), rr_url)
 
     published = metadata.get("published")
     new_count = 0

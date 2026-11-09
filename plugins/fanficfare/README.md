@@ -4,6 +4,9 @@ Wraps [FanFicFare](https://github.com/JimmXinu/FanFicFare) as a Bindery plugin. 
 AO3, FFN, SpaceBattles, Royal Road, or one of ~110 other sites' story URLs into Bindery and
 this container turns it into an EPUB.
 
+Site support does not guarantee access through a site's bot checks. See
+[Royal Road browser checks](#royal-road-browser-checks) for the current limitation.
+
 It implements `docs/PLUGIN-PROTOCOL.md` and knows nothing else about Bindery.
 
 ## Running it
@@ -133,3 +136,37 @@ stories to `not_found`, login trouble and adult gates to `auth_required`, thrott
 `rate_limited`, timeouts to `network`, changed site markup to `parse`. Unrecognized output
 becomes a retryable `internal` — cheap when the failure was transient, and visible in the
 job log either way.
+
+## Royal Road browser checks
+
+Royal Road can return a Cloudflare challenge to the Python CLI even when the same story
+opens in a browser. Bindery reports a confirmed challenge separately from a login error.
+This diagnosis does **not** restore server-side downloads; issue #51 remains blocked.
+
+The chosen workaround is local downloading followed by an EPUB upload:
+
+1. Install a current Calibre (9.16 or newer) and its FanFicFare plugin.
+2. In **Calibre's FanFicFare personal.ini**, not Bindery's settings, add:
+
+   ```ini
+   [www.royalroad.com]
+   use_camoufox:true
+   do_camoufox_warmup:true
+   ```
+
+3. Download the story as an EPUB in Calibre. Its browser integration may still encounter
+   site-side failures; successful access is not guaranteed.
+4. Save the EPUB to disk, then use Bindery's **Intake → Deposit a file**. It goes onto
+   your own shelf. This is a manual import, not an automatically refreshed Royal Road
+   download; repeat the export/import when you need an updated copy. A changed EPUB can
+   appear as a separate book rather than replacing the earlier upload.
+
+FanFicFare's [proxy documentation](https://github.com/JimmXinu/FanFicFare/wiki/ProxyFeatures#camoufox)
+documents this integration and explicitly says it is unavailable in the Python CLI.
+Setting `use_camoufox` in Bindery's `personal_ini` cannot enable it in this container.
+The [browser-cache documentation](https://github.com/JimmXinu/FanFicFare/wiki/BrowserCacheFeature#websites-known-not-to-work)
+also lists Royal Road as incompatible because its responses disable caching; mounting a
+desktop browser cache is therefore not a supported solution here.
+
+No browser, Calibre installation, shared browser profile, or new proxy is added to the
+Bindery host or plugin deployment by this workaround.

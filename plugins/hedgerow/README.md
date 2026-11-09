@@ -9,6 +9,11 @@ sources** into one correctly ordered EPUB:
 2. **Discord**, where the author posts advance-copy EPUBs, often as *forwarded* messages. A
    bot ingests those attachments.
 
+Royal Road may currently block direct downloads with a Cloudflare challenge. The
+[Calibre/FanFicFare browser workaround](../fanficfare/README.md#royal-road-browser-checks)
+produces an EPUB to upload through Bindery's Intake; it does not restore Hedgerow's
+server-side Royal Road scraper or its automatic reconciliation.
+
 Chapters 1–5 might come from Royal Road, chapter 6 from a forwarded EPUB, chapter 7 from
 Royal Road again; Hedgerow merges them into one book. It implements
 `docs/PLUGIN-PROTOCOL.md` and knows nothing else about Bindery. Like every plugin it is a
