@@ -251,6 +251,15 @@ def manifest_actions_schema(ctx: Ctx) -> None:
         if kind == "list" and "itemAction" in output:
             expect(output["itemAction"] in {"download", "none"},
                    f"actions.{name}: output.itemAction must be download|none")
+        if "search" in action:
+            expect_type(action["search"], bool, f"actions.{name}.search")
+        if action.get("search") is True:
+            fields = action.get("input", [])
+            expect(len(fields) == 1 and fields[0].get("key") == "q"
+                   and fields[0].get("type") == "string" and fields[0].get("required") is True,
+                   f"actions.{name}: search requires exactly one required string input 'q'")
+            expect(kind == "list" and output.get("itemAction") == "download",
+                   f"actions.{name}: search requires a downloadable list")
 
 
 @check("manifest.ui", group="manifest")

@@ -11,9 +11,14 @@ public sealed record ActionResult(
     IReadOnlyList<ActionListItem> Items,
     string? Text,
     string? Message,
-    string? Level);
+    string? Level)
+{
+    public string? Plugin { get; init; }
+}
 
 public sealed record ActionListItem(string Title, string? Subtitle, string? Url, string? Thumbnail);
+
+public sealed record PluginSearchResult(string Label, ActionResult Result);
 
 /// <summary>
 /// Runs a plugin's declared actions.
@@ -48,6 +53,51 @@ public sealed class PluginActionService(
     /// <summary>The actions <paramref name="person"/> may run, in manifest order.</summary>
     public static IReadOnlyList<Protocol.PluginAction> AvailableTo(Protocol.Manifest manifest, Person person) =>
         [.. manifest.Actions.AsList().Where(action => action.Access.Permits(person.IsAdmin))];
+
+    public async Task<IReadOnlyList<PluginSearchResult>> SearchAsync(
+        string query,
+        Person person,
+        CancellationToken cancellationToken)
+    {
+        var results = new List<PluginSearchResult>();
+
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return results;
+        }
+
+        // InvokeAsync loads config through the scoped DbContext; do not share it between
+        // concurrent calls. Each failed provider remains a visible result of its own.
+        foreach (var descriptor in registry.All)
+        {
+            if (!descriptor.IsUsable)
+            {
+                results.Add(new(descriptor.DisplayName, Failure("This plugin is not available right now.")));
+                continue;
+            }
+
+            if (descriptor.Manifest is not { } manifest)
+            {
+                continue;
+            }
+
+            foreach (var action in AvailableTo(manifest, person).Where(action => action.Search))
+            {
+                var result = await InvokeAsync(descriptor.Name, action.Name,
+                    new Dictionary<string, string> { ["q"] = query.Trim() }, person, cancellationToken);
+
+                if (result.Succeeded && result.Kind != "list")
+                {
+                    logger.LogWarning("search action {Action} on {Plugin} returned {Kind}", action.Name, descriptor.Name, result.Kind);
+                    result = Failure("The plugin did not return search results.");
+                }
+
+                results.Add(new($"{descriptor.DisplayName}: {action.Label}", result with { Plugin = descriptor.Name }));
+            }
+        }
+
+        return results;
+    }
 
     public async Task<ActionResult> InvokeAsync(
         string plugin,

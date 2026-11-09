@@ -76,6 +76,14 @@ def is_admin_path(route: str) -> bool:
 
 ACTIONS = [
     {
+        "name": "search",
+        "label": "Search ingested works",
+        "description": "Find already-ingested works by title or author, without fetching from a site.",
+        "search": True,
+        "input": [{"key": "q", "label": "Query", "type": "string", "required": True}],
+        "output": {"kind": "list", "itemAction": "download"},
+    },
+    {
         "name": "pending",
         "label": "Pending works",
         "description": "List works that have ingested chapters but have not been downloaded "

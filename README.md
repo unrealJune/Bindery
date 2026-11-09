@@ -134,7 +134,14 @@ rescans, and plugin screens marked admin-only. Set `Bindery:Auth:AdminClaim` (de
 signs in, so taking a person out of the admin group applies at their next sign-in. With no values, the first person who
 ever signed in is the admin — which is what an install from before shelves already meant,
 and everything already in the library lands on that person's shelf. Personal plugin
-settings — an AO3 login, say — are each person's own, under **Plugins → Your settings**.
+settings — an AO3 login, say — are each person's own, under **Settings → plugin → Your settings**.
+
+**Search** looks across your shelf, your connected library catalogs, and plugins that
+offer keyword search. Results stay labeled by source: open a shelf book, download a
+plugin result, place a physical hold, or open a library's digital lending app. A failed
+provider does not hide the other results. Library copy-type filters affect library
+results only. Plugins without keyword search, including FanFicFare, still accept URLs
+through **Intake**; Hedgerow can search the titles and authors of already-ingested works.
 
 ## Running it
 

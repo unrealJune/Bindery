@@ -15,6 +15,10 @@ Royal Road again; Hedgerow merges them into one book. It implements
 container that speaks HTTP and shares no volume with the host — even the merged EPUB travels
 to Bindery over HTTP.
 
+Bindery's **Search** page includes Hedgerow's already-ingested works, matched by title or
+author. Searching does not scrape Royal Road, reconfigure the bot, or queue a download;
+choose a result to download it. This is not a search of Royal Road's entire catalog.
+
 ## Running it
 
 ```bash
