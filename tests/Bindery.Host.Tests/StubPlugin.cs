@@ -42,6 +42,9 @@ public sealed class StubPlugin : IAsyncDisposable
 
     public string Name { get; init; } = "stub";
 
+    /// <summary>While set, the manifest answers 503, as a sidecar still starting would.</summary>
+    public volatile bool ManifestDown;
+
     /// <summary>Requests seen, so a test can assert on what the host actually sent.</summary>
     public List<string> Seen { get; } = [];
 
@@ -143,7 +146,9 @@ public sealed class StubPlugin : IAsyncDisposable
 
         app.MapGet("/healthz", () => Results.Json(new { status = "ok" }));
 
-        app.MapGet("/bindery/v1/manifest", () => Results.Text(Manifest(plugin!.Name, uiMode), "application/json"));
+        app.MapGet("/bindery/v1/manifest", () => plugin!.ManifestDown
+            ? Results.StatusCode(StatusCodes.Status503ServiceUnavailable)
+            : Results.Text(Manifest(plugin!.Name, uiMode), "application/json"));
 
         app.MapPost("/bindery/v1/probe", async (HttpContext context) =>
         {

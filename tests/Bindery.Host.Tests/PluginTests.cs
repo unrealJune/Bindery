@@ -27,6 +27,37 @@ public sealed class PluginTests(BinderyFixture fixture)
     }
 
     [Fact]
+    public async Task A_plugin_that_goes_down_is_reconnected_without_anyone_pressing_refresh()
+    {
+        var registry = fixture.Services.GetRequiredService<PluginRegistry>();
+        var entry = registry.FindEntry(fixture.Plugin.Name)!;
+
+        fixture.Plugin.ManifestDown = true;
+
+        try
+        {
+            // As a sidecar restarting under a running host would be seen.
+            Assert.False((await registry.RefreshAsync(entry, CancellationToken.None)).IsUsable);
+
+            fixture.Plugin.ManifestDown = false;
+
+            // The regular refresh is 15 minutes away; only the retry can bring it back.
+            var deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(10);
+            while (registry.Find(entry.Name)?.IsUsable != true && DateTimeOffset.UtcNow < deadline)
+            {
+                await Task.Delay(50);
+            }
+
+            Assert.True(registry.Find(entry.Name)?.IsUsable);
+        }
+        finally
+        {
+            fixture.Plugin.ManifestDown = false;
+            await registry.RefreshAsync(entry, CancellationToken.None);
+        }
+    }
+
+    [Fact]
     public async Task An_action_round_trips_through_the_host()
     {
         using var response = await fixture.Client.PostAsJsonAsync(
