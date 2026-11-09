@@ -17,6 +17,9 @@ import logging
 import os
 import re
 import shlex
+import urllib.error
+import urllib.parse
+import urllib.request
 import zipfile
 from dataclasses import dataclass
 from typing import AsyncIterator, Optional
@@ -77,6 +80,45 @@ def classify(output: str) -> FffError:
             line = _best_line(haystack, pattern)
             return FffError(code, line, retryable)
     return FffError("internal", _last_meaningful_line(haystack) or "FanFicFare failed without explanation")
+
+
+# ---------------------------------------------------------------- bot checks
+
+CHALLENGE_TIMEOUT = 10.0
+
+
+def is_challenge(status: int, headers) -> bool:
+    """Cloudflare's "Just a moment..." interstitial, by the header it marks it with."""
+    return status in (403, 503) and (headers.get("cf-mitigated") or "").lower() == "challenge"
+
+
+def _probe(url: str) -> bool:
+    request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Accept": "text/html"})
+    try:
+        with urllib.request.urlopen(request, timeout=CHALLENGE_TIMEOUT) as reply:
+            return is_challenge(reply.status, reply.headers)
+    except urllib.error.HTTPError as refused:
+        return is_challenge(refused.code, refused.headers)
+    except Exception:  # noqa: BLE001 - a diagnosis that fails changes nothing
+        return False
+
+
+async def explain(error: FffError, url: str) -> FffError:
+    """Tell a site's bot check apart from a refused login.
+
+    FanFicFare reports both as a bare 403, and the challenge page never reaches its output,
+    so one plain request to the same URL is how to know. A bot check is not the person's
+    credentials and nothing in their settings will fix it; it is reported as the site being
+    unreachable, which the host retries with backoff in case the check is lifted. This only
+    diagnoses — it makes no attempt to pass the check.
+    """
+    if error.code != "auth_required" or "403" not in error.message:
+        return error
+    if not await asyncio.to_thread(_probe, url):
+        return error
+    host = urllib.parse.urlsplit(url).hostname or "the site"
+    return FffError("network", f"{host} is showing automated downloads a Cloudflare bot check, which "
+                          "FanFicFare cannot pass. This is the site, not your settings or login.")
 
 
 def _best_line(text: str, pattern) -> str:
