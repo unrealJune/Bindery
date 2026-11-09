@@ -55,6 +55,7 @@ public sealed class BinderyFixture : IAsyncLifetime
             ["Bindery:Downloads:Concurrency"] = "1",
             ["Bindery:Downloads:RetryDelay"] = "00:00:01",
             ["Bindery:Plugins:Token"] = "test-token",
+            ["Bindery:Plugins:ManifestRetry"] = "00:00:00.200",
             ["Bindery:Plugins:Registry:0:Name"] = Plugin.Name,
             ["Bindery:Plugins:Registry:0:Enabled"] = "true",
             ["Bindery:Plugins:Registry:0:BaseUrl"] = Plugin.BaseUrl,

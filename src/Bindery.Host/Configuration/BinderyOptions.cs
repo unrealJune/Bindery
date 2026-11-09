@@ -304,6 +304,14 @@ public sealed class PluginHostOptions
     /// <summary>How often a cached manifest is refreshed.</summary>
     public TimeSpan ManifestRefresh { get; set; } = TimeSpan.FromMinutes(15);
 
+    /// <summary>
+    /// First retry after a plugin turns out unreachable — typically a sidecar still starting
+    /// when Bindery boots. Doubles on each failure up to <see cref="ManifestRetryMax"/>.
+    /// </summary>
+    public TimeSpan ManifestRetry { get; set; } = TimeSpan.FromSeconds(2);
+
+    public TimeSpan ManifestRetryMax { get; set; } = TimeSpan.FromMinutes(1);
+
     public TimeSpan ProbeTimeout { get; set; } = TimeSpan.FromSeconds(5);
 
     public TimeSpan ManifestTimeout { get; set; } = TimeSpan.FromSeconds(10);
