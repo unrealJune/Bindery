@@ -1,0 +1,60 @@
+@page "/settings"
+@model SettingsModel
+@using Bindery.Host.Plugins
+@{
+    ViewData["Title"] = "Settings";
+}
+
+<header class="page-heading">
+    <h1>Settings</h1>
+</header>
+
+<section class="plugin-docket" aria-labelledby="settings-yours">
+    <div class="docket-heading">
+        <h2 id="settings-yours">Yours</h2>
+    </div>
+    <ul class="settings-index">
+        <li>
+            <a asp-page="/FeedTokens">E-readers</a>
+            <span>Feed links for the readers that pull your shelf over OPDS.</span>
+        </li>
+        <li>
+            <a asp-page="/LibraryCards">Library cards</a>
+            <span>The cards Borrow searches with and Holds keeps track of.</span>
+        </li>
+    </ul>
+</section>
+
+<section class="plugin-docket" aria-labelledby="settings-plugins">
+    <div class="docket-heading">
+        <h2 id="settings-plugins">Plugins</h2>
+        <span>@Model.Plugins.Count.ToString("00") configured</span>
+    </div>
+
+    @if (Model.Plugins.Count == 0)
+    {
+        <div class="empty-state empty-state-wide">
+            <strong>No plugins are configured.</strong>
+            <span>Add an entry under <code>Bindery:Plugins:Registry</code> — the Helm chart renders it into a ConfigMap.</span>
+        </div>
+    }
+    else
+    {
+        <ul class="settings-index">
+            @foreach (var plugin in Model.Plugins)
+            {
+                <li>
+                    <a href="@PluginLinks.Settings(plugin.Name)">
+                        <span class="status-mark status-@(plugin.IsUsable ? "ready" : "failed")" aria-hidden="true"></span>
+                        @plugin.DisplayName
+                    </a>
+                    <span>@(plugin.IsUsable ? plugin.Manifest!.Description.OrNull() ?? $"v{plugin.Manifest!.Version}" : "Not answering — open it to see why.")</span>
+                    @if (plugin.IsUsable && plugin.Manifest!.Ui.Mode.ServesHtml)
+                    {
+                        <a class="text-action" href="@PluginLinks.Desk(plugin.Name)">Open ›</a>
+                    }
+                </li>
+            }
+        </ul>
+    }
+</section>

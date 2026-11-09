@@ -48,7 +48,6 @@ public sealed record ProxiedDocument(
 /// </remarks>
 public sealed class PluginUiProxy(
     PluginClient client,
-    PluginRegistry registry,
     FragmentSanitizer sanitizer,
     PluginPseudonyms pseudonyms,
     IOptions<BinderyOptions> options,
@@ -398,9 +397,6 @@ public sealed class PluginUiProxy(
         ];
     }
 
-    /// <summary>Everything the shell needs to render a plugin's navigation entries.</summary>
-    public IReadOnlyList<PluginNavEntry> AllNavigation(bool isAdmin) =>
-        [.. registry.Usable.SelectMany(descriptor => NavigationFor(descriptor, isAdmin))];
 }
 
 public sealed record PluginNavEntry(
@@ -410,6 +406,21 @@ public sealed record PluginNavEntry(
     string? Icon,
     string? Section,
     string Path);
+
+/// <summary>Where Bindery's own chrome sends a person for a plugin.</summary>
+public static class PluginLinks
+{
+    /// <summary>The plugin's desk when it has screens of its own; otherwise its settings.</summary>
+    public static string Home(PluginDescriptor plugin) =>
+        plugin.IsUsable && plugin.Manifest?.Ui.Mode.ServesHtml == true
+            ? Desk(plugin.Name)
+            : Settings(plugin.Name);
+
+    public static string Desk(string name) => $"/plugins/{Uri.EscapeDataString(name)}";
+
+    /// <summary>The host-rendered settings tab every configured plugin has, reachable or not.</summary>
+    public static string Settings(string name) => Desk(name) + "/settings";
+}
 
 public static class PluginUiEndpoints
 {

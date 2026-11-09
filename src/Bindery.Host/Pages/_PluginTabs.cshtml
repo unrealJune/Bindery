@@ -1,0 +1,20 @@
+@model PluginTabsView
+@using Bindery.Host.Plugins
+@{
+    // The plugin's own screens, then Bindery's settings tab, then any screen the plugin
+    // filed under `section: "settings"` — so its configuration sits together however the
+    // plugin is built. A null CurrentPath means the settings tab is the one showing.
+    var screens = Model.Nav.Where(entry => entry.Section != "settings").ToList();
+    var settings = Model.Nav.Where(entry => entry.Section == "settings").ToList();
+}
+<nav class="desk-tabs" aria-label="@Model.Descriptor.DisplayName screens">
+    @foreach (var entry in screens)
+    {
+        <a class="@(entry.Path == Model.CurrentPath ? "is-current" : null)" href="@entry.Href">@entry.Label</a>
+    }
+    <a class="@(Model.CurrentPath is null ? "is-current" : null)" href="@PluginLinks.Settings(Model.Descriptor.Name)">Settings</a>
+    @foreach (var entry in settings)
+    {
+        <a class="@(entry.Path == Model.CurrentPath ? "is-current" : null)" href="@entry.Href">@entry.Label</a>
+    }
+</nav>

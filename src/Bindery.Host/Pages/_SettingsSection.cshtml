@@ -5,8 +5,7 @@
 
 @* One section of a plugin's settings. The scope travels as a hidden field and the page
    model re-checks it: posting the install section is refused to anyone but an admin. *@
-<form method="post" asp-page="/Plugins" asp-page-handler="Save" class="plugin-form">
-    <input type="hidden" name="plugin" value="@Model.Plugin" />
+<form method="post" asp-page="/PluginSettings" asp-route-name="@Model.Plugin" asp-page-handler="Save" class="plugin-form">
     @if (personal)
     {
         <input type="hidden" name="scope" value="@Model.Scope" />
@@ -29,9 +28,8 @@
 
 @if (Model.Values.SecretsSet.Count > 0)
 {
-    <form method="post" asp-page="/Plugins" asp-page-handler="Clear" class="plugin-secrets">
-        <input type="hidden" name="plugin" value="@Model.Plugin" />
-        @if (personal)
+    <form method="post" asp-page="/PluginSettings" asp-route-name="@Model.Plugin" asp-page-handler="Clear" class="plugin-secrets">
+            @if (personal)
         {
             <input type="hidden" name="scope" value="@Model.Scope" />
         }

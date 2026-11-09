@@ -1,8 +1,12 @@
 @using Bindery.Host.Plugins
-@inject PluginUiProxy PluginUi
+@inject PluginRegistry Registry
 @{
     var path = Context.Request.Path;
-    var pluginNavigation = PluginUi.AllNavigation(Bindery.Host.Security.Identity.IsAdmin(User));
+    var plugins = Registry.All;
+    Func<string, bool> under = prefix => path.StartsWithSegments(prefix);
+    var currentPlugin = plugins.FirstOrDefault(plugin => under("/plugins/" + plugin.Name));
+    var inSettings = under("/settings") || path.Equals("/plugins", StringComparison.OrdinalIgnoreCase)
+        || under("/FeedTokens") || under("/library-cards") || currentPlugin is not null;
 }
 <!doctype html>
 <html lang="en">
@@ -98,55 +102,63 @@
                 </svg>
                 <span>Intake</span>
             </a>
-            <a class="@(path.StartsWithSegments("/Library") || path.StartsWithSegments("/Book") ? "is-current" : null)" asp-page="/Library">
+            <a class="@(under("/Library") || under("/Book") ? "is-current" : null)" asp-page="/Library">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <path d="M4 4h5a2 2 0 0 1 2 2v13a2 2 0 0 0-2-2H4z" /><path d="M20 4h-5a2 2 0 0 0-2 2v13a2 2 0 0 1 2-2h5z" />
                 </svg>
-                <span>Library</span>
+                <span>Shelf</span>
             </a>
-            <a class="@(path.StartsWithSegments("/borrow") ? "is-current" : null)" asp-page="/Borrow">
+            <a class="@(under("/borrow") ? "is-current" : null)" asp-page="/Borrow">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <circle cx="10.5" cy="10.5" r="6" /><path d="M15 15l5.5 5.5" />
                 </svg>
                 <span>Borrow</span>
             </a>
-            <a class="@(path.StartsWithSegments("/holds") || path.StartsWithSegments("/library-cards") ? "is-current" : null)" asp-page="/Holds">
+            <a class="@(under("/holds") ? "is-current" : null)" asp-page="/Holds">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <path d="M6 3.5h12v17l-6-4-6 4z" />
                 </svg>
                 <span>Holds</span>
             </a>
-            <a class="@(path.StartsWithSegments("/Downloads") ? "is-current" : null)" asp-page="/Downloads">
+            <a class="@(under("/Downloads") ? "is-current" : null)" asp-page="/Downloads">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <path d="M3 12h3.5l2.5-7 4 14 2.5-7H21" />
                 </svg>
                 <span>Jobs</span>
             </a>
-            <a class="@(path.StartsWithSegments("/Plugins") ? "is-current" : null)" asp-page="/Plugins">
+            @*
+                Everything set up once lives under Settings: e-readers, library cards, and each
+                plugin. The island has room for Settings alone and reaches the rest through the
+                hub; the desktop rail also lists them beneath it, one entry per plugin.
+            *@
+            <a class="@(inSettings ? "is-current" : null)" asp-page="/Settings">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <path d="M9 3v3.5M15 3v3.5" /><path d="M5.5 6.5h13v6a5 5 0 0 1-5 5h-3a5 5 0 0 1-5-5z" /><path d="M12 17.5V21" />
+                    <path d="M4 6.5h9M17 6.5h3M4 12h3M11 12h9M4 17.5h11M19 17.5h1" /><circle cx="15" cy="6.5" r="2" /><circle cx="9" cy="12" r="2" /><circle cx="17" cy="17.5" r="2" />
                 </svg>
-                <span>Plugins</span>
+                <span>Settings</span>
             </a>
-            <a class="@(path.StartsWithSegments("/FeedTokens") ? "is-current" : null)" asp-page="/FeedTokens">
+
+            <span class="rail-divider">Set up</span>
+            <a class="rail-extra @(under("/FeedTokens") ? "is-current" : null)" asp-page="/FeedTokens">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <rect x="4.5" y="3" width="15" height="18" rx="1.5" /><path d="M9.5 17.5h5" /><path d="M8 7h8" /><path d="M8 10.5h5" />
                 </svg>
-                <span>Readers</span>
+                <span>E-readers</span>
             </a>
-
-            @if (pluginNavigation.Count > 0)
+            <a class="rail-extra @(under("/library-cards") ? "is-current" : null)" asp-page="/LibraryCards">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <rect x="3" y="5.5" width="18" height="13" rx="1.5" /><path d="M3 9.5h18" /><path d="M7 14.5h4" />
+                </svg>
+                <span>Library cards</span>
+            </a>
+            @foreach (var plugin in plugins)
             {
-                <span class="rail-divider">Plugin desks</span>
-                @foreach (var entry in pluginNavigation)
-                {
-                    <a class="rail-extra @(path.StartsWithSegments(entry.Href) ? "is-current" : null)" href="@entry.Href">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <rect x="3.5" y="3.5" width="7" height="7" rx="1" /><rect x="13.5" y="3.5" width="7" height="7" rx="1" /><rect x="3.5" y="13.5" width="7" height="7" rx="1" /><rect x="13.5" y="13.5" width="7" height="7" rx="1" />
-                        </svg>
-                        <span>@entry.Label</span>
-                    </a>
-                }
+                <a class="rail-extra @(plugin == currentPlugin ? "is-current" : null)" href="@PluginLinks.Home(plugin)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M9 3v3.5M15 3v3.5" /><path d="M5.5 6.5h13v6a5 5 0 0 1-5 5h-3a5 5 0 0 1-5-5z" /><path d="M12 17.5V21" />
+                    </svg>
+                    <span>@plugin.DisplayName</span>
+                </a>
             }
         </nav>
 
