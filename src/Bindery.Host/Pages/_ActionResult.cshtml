@@ -29,6 +29,10 @@ else if (Model.Kind == "list")
                            acquires a book goes through the job ledger. *@
                         <form method="post" asp-page="/Index" asp-page-handler="Queue">
                             <input type="hidden" name="SourceUrl" value="@item.Url" />
+                            @if (Model.Plugin is not null)
+                            {
+                                <input type="hidden" name="PreferredPlugin" value="@Model.Plugin" />
+                            }
                             <button class="text-action" type="submit">File this</button>
                         </form>
                     }

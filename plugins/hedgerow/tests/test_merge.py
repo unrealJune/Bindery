@@ -246,6 +246,17 @@ class Deletion(unittest.TestCase):
         self.dir = tempfile.mkdtemp(prefix="hedgerow-store-")
         self.store = Store(os.path.join(self.dir, "test.db"))
 
+    def test_keyword_search_matches_title_or_author_without_changing_the_store(self):
+        work = self.store.get_or_create_work(source_url="https://example.test/fiction/1")
+        other = self.store.get_or_create_work(source_url="https://example.test/fiction/2")
+        self.store.update_work(work.id, title="Harbour Lights", author="A. Writer")
+        self.store.update_work(other.id, title="The Mountains", author="B. Poet")
+
+        for query in ("  HARBOUR  ", "writer"):
+            self.assertEqual([work.id], [w.id for w in self.store.list_works(query)])
+        self.assertEqual([], self.store.list_works("not a match"))
+        self.assertEqual([work.id, other.id], [w.id for w in self.store.list_works()])
+
     def test_forgetting_a_work_takes_its_chapters_and_bindings_with_it(self):
         work = self.store.get_or_create_work(source_url="https://example.test/fiction/1")
         other = self.store.get_or_create_work(source_url="https://example.test/fiction/2")

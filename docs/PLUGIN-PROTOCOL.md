@@ -739,6 +739,7 @@ Manifest:
 ```jsonc
 "actions": [
   { "name": "search", "label": "Search AO3", "description": "Find a work by title or author.",
+    "search": true,
     "input": [ { "key": "q", "label": "Query", "type": "string", "required": true } ],
     "output": { "kind": "list", "itemAction": "download" } }
 ]
@@ -753,6 +754,14 @@ Manifest:
   person sees; the host **MUST** refuse to invoke it for anyone but an admin (§2.3) and
   **SHOULD NOT** offer it to them. An unrecognized value is treated as `admin` — a typo
   fails closed.
+- `search` — boolean, default `false`. Opts this action into the host's unified search
+  alongside the person's shelf and library catalogs. Such an action **MUST** be read-only,
+  accept exactly one required `string` input named `q`, and return
+  `{"kind":"list","itemAction":"download"}`. The host may invoke it while rendering a
+  search page, but **MUST NOT** queue a download until the person chooses a result.
+  Access rules and per-person config still apply. The host **MUST NOT** infer this flag
+  from an action's name, or invoke other actions automatically. Plugins that only accept
+  URLs need not offer keyword search; their existing intake flow is unchanged.
 
 Invocation — `POST /bindery/v1/actions/{name}`:
 
@@ -913,6 +922,7 @@ not a framework, not a base image.
 | Version | Change |
 |---|---|
 | 1 | Initial contract. |
+| 1 (additive) | Actions may opt into unified keyword search with `search: true` (§5). Absent means false; older hosts still render these as ordinary actions. No new endpoint or protocol version is needed. |
 | 1 (additive) | `capabilities.notify` and §3.7 added — a plugin that learns of new content out-of-band may POST a contentless hint to Bindery, which decides whether to queue an update. No version bump: the capability defaults to `false`, the advertising headers are optional, and a host that serves no endpoint simply omits them. The host's update schedule remains the backstop, so the feature is an optimization and never a correctness requirement. |
 | 1 (additive) | `capabilities.circulation`, the manifest's `circulation` block, and §3.8 added — library search, holds, and loans, with per-person accounts and an explicit `physical`/`digital` medium on every item. New error codes `not_holdable`, `already_held`, `hold_limit`, `account_blocked`; older hosts already treat unknown codes as `internal`. No version bump: the capability defaults to `false`, a host that does not implement it never calls the new endpoints, and a circulation plugin still serves every required endpoint. |
 | 1 (additive) | `ui.mode: "sandboxed"` added — a full document in an opaque-origin iframe, plugin JavaScript permitted, host communication via the `postMessage` bridge. `fragment` deprecated but unchanged. `iframe` becomes a deprecated alias for `sandboxed`. No version bump: unknown `ui.mode` values already degrade to `declarative`. |

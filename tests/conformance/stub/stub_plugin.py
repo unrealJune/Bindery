@@ -71,7 +71,7 @@ MANIFEST = {
         {"name": "echo", "label": "Echo", "description": "Returns what you typed.",
          "input": [{"key": "text", "label": "Text", "type": "string", "required": True}],
          "output": {"kind": "text"}},
-        {"name": "search", "label": "Search", "description": "Fabricates a few results.",
+        {"name": "search", "label": "Search", "description": "Fabricates a few results.", "search": True,
          "input": [{"key": "q", "label": "Query", "type": "string", "required": True}],
          "output": {"kind": "list", "itemAction": "download"}},
     ],

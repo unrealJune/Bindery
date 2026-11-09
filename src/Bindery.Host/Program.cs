@@ -113,6 +113,10 @@ builder.Services.AddRazorPages(razor =>
     {
         AttributeRouteModel = new AttributeRouteModel { Template = "plugins", SuppressLinkGeneration = true }
     }));
+    razor.Conventions.AddPageRouteModelConvention("/Borrow", page => page.Selectors.Add(new SelectorModel
+    {
+        AttributeRouteModel = new AttributeRouteModel { Template = "borrow", SuppressLinkGeneration = true }
+    }));
 });
 
 builder.Services.AddAntiforgery(antiforgery =>

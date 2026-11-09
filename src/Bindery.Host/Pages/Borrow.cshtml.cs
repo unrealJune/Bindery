@@ -1,6 +1,9 @@
+using System.ComponentModel.DataAnnotations;
 using Bindery.Core;
+using Bindery.Host.Catalog;
 using Bindery.Host.Circulation;
 using Bindery.Host.Data;
+using Bindery.Host.Plugins;
 using Bindery.Host.Security;
 using Bindery.Host.Ui;
 using Microsoft.AspNetCore.Mvc;
@@ -9,16 +12,16 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 namespace Bindery.Host.Pages;
 
 /// <summary>
-/// Search every library the signed-in person has a card for, and place holds.
+/// Search the person's shelf, library catalogs, and opt-in downloader actions together.
 /// </summary>
-/// <remarks>
-/// The medium filter is the page's first control on purpose. A physical hold and a digital
-/// one are different promises — a trip to a branch versus a licence in an app — and the
-/// person should choose which they are looking for before they see a single result.
-/// </remarks>
-public sealed class BorrowModel(CirculationAccountStore accounts, CirculationService circulation) : PageModel
+public sealed class BorrowModel(
+    CirculationAccountStore accounts,
+    CirculationService circulation,
+    CatalogService catalog,
+    PluginActionService actions) : PageModel
 {
     [BindProperty(SupportsGet = true, Name = "q")]
+    [StringLength(500)]
     public string? Query { get; set; }
 
     /// <summary>"any", "physical", or "digital".</summary>
@@ -28,8 +31,19 @@ public sealed class BorrowModel(CirculationAccountStore accounts, CirculationSer
     [BindProperty(SupportsGet = true, Name = "card")]
     public Guid? Card { get; set; }
 
-    [BindProperty(SupportsGet = true, Name = "page")]
+    [FromQuery(Name = "page")]
     public int PageNumber { get; set; } = 1;
+
+    // Razor reserves "page" for its route. Read old bookmarks, but generate catalogPage.
+    [BindProperty(SupportsGet = true, Name = "catalogPage")]
+    public int? CatalogPageNumber { get; set; }
+
+    [BindProperty(SupportsGet = true, Name = "shelfPage")]
+    public int ShelfPage { get; set; }
+
+    public Page<Domain.Book> ShelfBooks { get; private set; } = new([], 0, 0, 12);
+
+    public IReadOnlyList<PluginSearchResult> PluginResults { get; private set; } = [];
 
     public bool HasCirculationPlugins { get; private set; }
 
@@ -46,18 +60,23 @@ public sealed class BorrowModel(CirculationAccountStore accounts, CirculationSer
         HasCirculationPlugins = accounts.CirculationPlugins.Count > 0;
         Accounts = await accounts.ListAsync(owner, cancellationToken);
 
-        if (string.IsNullOrWhiteSpace(Query) || Accounts.Count == 0)
+        if (!ModelState.IsValid || string.IsNullOrWhiteSpace(Query))
         {
             return;
         }
 
+        Query = Query.Trim();
+        PageNumber = Math.Max(1, CatalogPageNumber ?? PageNumber);
+        ShelfPage = Math.Max(0, ShelfPage);
+        ShelfBooks = await catalog.SearchAsync(owner, Query, ShelfPage, 12, cancellationToken);
         Results = await circulation.SearchAsync(
             owner,
-            Query.Trim(),
+            Query,
             Protocol.MediumModule.ofWire(Medium).OrNull(),
             Card,
-            Math.Max(1, PageNumber),
+            PageNumber,
             cancellationToken);
+        PluginResults = await actions.SearchAsync(Query, Person.Of(User), cancellationToken);
     }
 
     public async Task<IActionResult> OnPostHoldAsync(
