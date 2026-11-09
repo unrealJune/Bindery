@@ -96,6 +96,38 @@ let ``manifest parses an action schema`` () =
     Assert.Equal("list_urls", action.Name)
     Assert.Equal(ListOutput DownloadItem, action.Output)
     Assert.True (Assert.Single action.Input).Required
+    Assert.False action.Search
+
+[<Theory>]
+[<InlineData("true", true)>]
+[<InlineData("false", false)>]
+[<InlineData("\"true\"", false)>]
+let ``search actions require explicit boolean opt in`` flag expected =
+    let json =
+        sprintf
+            """{"protocolVersion":1,"name":"p","version":"1","actions":[
+                 {"name":"find","label":"Find","search":%s,
+                  "input":[{"key":"q","label":"Query","type":"string","required":true}],
+                  "output":{"kind":"list","itemAction":"download"}}]}"""
+            flag
+
+    let action = (Manifest.parse json |> ok).Actions |> Assert.Single
+    Assert.Equal(expected, action.Search)
+
+[<Theory>]
+[<InlineData("url", "list", "download")>]
+[<InlineData("q", "message", "download")>]
+[<InlineData("q", "list", "none")>]
+let ``search actions reject incompatible contracts`` key kind itemAction =
+    let json =
+        sprintf
+            """{"protocolVersion":1,"name":"p","version":"1","actions":[
+                 {"name":"find","label":"Find","search":true,
+                  "input":[{"key":"%s","label":"Query","type":"string","required":true}],
+                  "output":{"kind":"%s","itemAction":"%s"}}]}"""
+            key kind itemAction
+
+    Assert.Contains("search actions", Manifest.parse json |> err)
 
 [<Fact>]
 let ``manifest config scope defaults to install and fails closed to user`` () =

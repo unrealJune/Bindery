@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Bindery.Host.Circulation;
 using Bindery.Host.Data;
 using Bindery.Host.Downloads;
 using Bindery.Host.Plugins;
@@ -47,6 +48,162 @@ public sealed class MultiUserTests(BinderyFixture fixture)
         var db = scope.ServiceProvider.GetRequiredService<BinderyDbContext>();
         var directory = await db.Books.Where(book => book.Id == bookId).Select(book => book.DirectoryPath).SingleAsync();
         return Path.Combine(fixture.LibraryPath, directory);
+    }
+
+    [Fact]
+    public async Task Unified_search_combines_sources_without_crossing_people_or_queuing_anything()
+    {
+        const string owner = "search-reader";
+        const string other = "search-other";
+        using var reader = fixture.ClientFor(owner);
+        using var someoneElse = fixture.ClientFor(other);
+        var mine = await DownloadAsync(reader, NextWork());
+        var theirs = await DownloadAsync(someoneElse, NextWork());
+        using var scope = fixture.CreateScope();
+        var accounts = scope.ServiceProvider.GetRequiredService<CirculationAccountStore>();
+        var card = await accounts.ConnectAsync(owner, fixture.Plugin.Name,
+            new Dictionary<string, string?> { ["card"] = "29000010000901", ["pin"] = StubPlugin.GoodPin }, CancellationToken.None);
+        var otherCard = await accounts.ConnectAsync(other, fixture.Plugin.Name,
+            new Dictionary<string, string?> { ["card"] = "29000010000902", ["pin"] = StubPlugin.GoodPin }, CancellationToken.None);
+        Assert.Null(card.Problem);
+        Assert.Null(otherCard.Problem);
+
+        var settings = scope.ServiceProvider.GetRequiredService<PluginSettingsStore>();
+        var manifest = scope.ServiceProvider.GetRequiredService<PluginRegistry>().Find(fixture.Plugin.Name)!.Manifest!;
+        await settings.SaveAsync(manifest, owner,
+            new Dictionary<string, string?> { ["reader_login"] = "search-readers-login" }, CancellationToken.None);
+        var before = fixture.Plugin.Calls.Count;
+
+        using var response = await reader.GetAsync("/search?q=Stub");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var html = await response.Content.ReadAsStringAsync();
+        Assert.Contains(mine.ToString(), html, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(theirs.ToString(), html, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(card.Account!.Id.ToString(), html, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(otherCard.Account!.Id.ToString(), html, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("A Shelf Copy", html, StringComparison.Ordinal);
+        Assert.Contains("Borrow in StubDrive", html, StringComparison.Ordinal);
+        Assert.Contains("Stub result", html, StringComparison.Ordinal);
+        Assert.Contains($"name=\"PreferredPlugin\" value=\"{fixture.Plugin.Name}\"", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("search-readers-login", html, StringComparison.Ordinal);
+
+        var calls = fixture.Plugin.Calls.Skip(before).ToList();
+        var search = Assert.Single(calls, call => call.Request == "POST /bindery/v1/actions/search");
+        Assert.Equal("search-readers-login", search.Config?["reader_login"]?.GetValue<string>());
+        Assert.Equal(fixture.Services.GetRequiredService<PluginPseudonyms>().For(fixture.Plugin.Name, owner), search.User);
+        Assert.Equal("member", search.Role);
+        Assert.DoesNotContain(calls, call => call.Request.Contains("/actions/admin_search", StringComparison.Ordinal)
+            || call.Request.Contains("/actions/purge", StringComparison.Ordinal)
+            || call.Request.Contains("/actions/echo", StringComparison.Ordinal)
+            || call.Request == "POST /bindery/v1/download"
+            || call.Request == "POST /bindery/v1/circulation/holds");
+
+        var token = System.Text.RegularExpressions.Regex.Match(
+            html, "name=\"__RequestVerificationToken\" type=\"hidden\" value=\"([^\"]+)\"").Groups[1].Value;
+        var cookie = response.Headers.GetValues("Set-Cookie")
+            .First(header => header.StartsWith("bindery.antiforgery=", StringComparison.Ordinal)).Split(';')[0];
+
+        using var post = new HttpRequestMessage(HttpMethod.Post, "/search?handler=Hold")
+        {
+            Content = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["__RequestVerificationToken"] = token,
+                ["account"] = card.Account.Id.ToString(),
+                ["item"] = "bib-1",
+                ["pickup"] = "2",
+                ["returnQuery"] = "Stub"
+            })
+        };
+        post.Headers.Add("Cookie", cookie);
+        using var held = await reader.SendAsync(post);
+        Assert.Equal(HttpStatusCode.Redirect, held.StatusCode);
+        Assert.Equal("/holds", held.Headers.Location?.ToString());
+        Assert.Single(fixture.Plugin.CardHolds["29000010000901"]);
+        Assert.Empty(fixture.Plugin.CardHolds["29000010000902"]);
+
+        using var queue = new HttpRequestMessage(HttpMethod.Post, "/?handler=Queue")
+        {
+            Content = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["__RequestVerificationToken"] = token,
+                ["SourceUrl"] = StubPlugin.SupportedUrl,
+                ["PreferredPlugin"] = fixture.Plugin.Name
+            })
+        };
+        queue.Headers.Add("Cookie", cookie);
+        using var queued = await reader.SendAsync(queue);
+        Assert.Equal(HttpStatusCode.Redirect, queued.StatusCode);
+        var target = new Uri(reader.BaseAddress!, queued.Headers.Location!);
+        var jobId = Guid.Parse(Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(target.Query)["highlight"].ToString());
+        var job = await fixture.WaitForJobAsync(jobId);
+        Assert.Equal("succeeded", job.Status);
+        using var acquired = await reader.GetAsync($"/api/books/{job.BookId}");
+        Assert.Equal(HttpStatusCode.OK, acquired.StatusCode);
+
+        var filtered = await reader.GetStringAsync($"/search?q=Stub&card={otherCard.Account.Id}");
+        Assert.DoesNotContain("A Shelf Copy", filtered, StringComparison.Ordinal);
+        Assert.Contains("Stub result", filtered, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Unified_search_works_without_a_card_and_preserves_shelf_results_when_a_plugin_fails(bool fail)
+    {
+        using var reader = fixture.ClientFor($"search-without-card-{fail}");
+        var book = await DownloadAsync(reader, NextWork());
+        fixture.Plugin.FailSearch = fail;
+
+        try
+        {
+            var html = await reader.GetStringAsync("/search?q=Stub");
+            Assert.Contains(book.ToString(), html, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("add a library card", html, StringComparison.Ordinal);
+            Assert.Contains(fail ? "Stub search unavailable" : "Stub result", html, StringComparison.Ordinal);
+            Assert.DoesNotContain("A Shelf Copy", html, StringComparison.Ordinal);
+        }
+        finally
+        {
+            fixture.Plugin.FailSearch = false;
+        }
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task An_empty_unified_search_never_invokes_an_action(string query)
+    {
+        using var reader = fixture.ClientFor("search-without-query");
+        var before = fixture.Plugin.Calls.Count;
+        using var response = await reader.GetAsync($"/search?q={Uri.EscapeDataString(query)}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.DoesNotContain(fixture.Plugin.Calls.Skip(before),
+            call => call.Request.StartsWith("POST /bindery/v1/actions/", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Unified_shelf_paging_keeps_the_query_and_library_filters()
+    {
+        using var reader = fixture.ClientFor("search-paging");
+        for (var index = 0; index < 13; index++)
+        {
+            await UploadAsync(reader, ShelfTests.BuildEpub($"Search Pager {index:00}", "Pager Author"));
+        }
+
+        var first = await reader.GetStringAsync("/search?q=Search%20Pager&medium=digital&page=2");
+        var pager = System.Text.RegularExpressions.Regex.Match(first,
+            "<nav class=\"pager\" aria-label=\"Shelf search pages\">(.*?)</nav>",
+            System.Text.RegularExpressions.RegexOptions.Singleline).Groups[1].Value;
+        var next = WebUtility.HtmlDecode(System.Text.RegularExpressions.Regex.Match(pager, "href=\"([^\"]+)\"").Groups[1].Value);
+        Assert.Contains("shelfPage=1", next, StringComparison.Ordinal);
+        Assert.Contains("medium=digital", next, StringComparison.Ordinal);
+        Assert.Contains("catalogPage=2", next, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Search Pager 00", first, StringComparison.Ordinal);
+        Assert.DoesNotContain("Search Pager 12", first, StringComparison.Ordinal);
+
+        var second = await reader.GetStringAsync(next);
+        Assert.Contains("Search Pager 12", second, StringComparison.Ordinal);
+        Assert.DoesNotContain("Search Pager 00", second, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -17,7 +17,10 @@
 }
 
 <header class="page-heading">
-    <h1>Bring a source onto your shelf.</h1>
+    <div>
+        <h1>Bring a source onto your shelf.</h1>
+        <p>Looking for a title instead? <a asp-page="/Borrow">Search your shelf, plugins, and libraries</a>.</p>
+    </div>
     <span class="folio">@Model.TotalBooks.ToString("0000") books filed</span>
 </header>
 

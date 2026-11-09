@@ -1,189 +1,225 @@
-@page "/borrow"
+@page "/search"
 @model BorrowModel
 @using Bindery.Core
 @{
-    ViewData["Title"] = "Borrow";
+    ViewData["Title"] = "Search";
 }
 
 <header class="page-heading">
     <div>
-        <h1>Borrow from your library</h1>
-        <p>Search every library you have a card for. Physical books are held for you at a branch; digital ones are borrowed in the library's lending app.</p>
+        <h1>Find your next book</h1>
+        <p>Search your shelf, your library catalogs, and plugins offering keyword search together. Open a book you own, download a new one, or place a library hold.</p>
+        <p>Have a story URL or a file instead? <a asp-page="/Index">Add it through Intake</a>. URL-only plugins are not keyword search providers.</p>
     </div>
     <a class="button button-secondary" asp-page="/Holds"><span>Your holds</span></a>
 </header>
 
+<div asp-validation-summary="All" class="validation-summary" role="alert"></div>
+<form method="get" class="borrow-search" role="search">
+    @*
+        Medium first, as a fieldset of real radio buttons: it works with no JavaScript,
+        a screen reader announces it as one choice, and it survives in the URL.
+    *@
+    <fieldset class="medium-seg">
+        <legend>Library copy type</legend>
+        <label><input type="radio" name="medium" value="any" checked="@(Model.Medium == "any")" /><span>All</span></label>
+        <label><input type="radio" name="medium" value="physical" checked="@(Model.Medium == "physical")" /><span>Physical</span></label>
+        <label><input type="radio" name="medium" value="digital" checked="@(Model.Medium == "digital")" /><span>Digital</span></label>
+    </fieldset>
+
+    <div class="borrow-search-row">
+        <label class="visually-hidden" for="borrow-q">Title, author, or keyword</label>
+        <input id="borrow-q" class="control control-large" type="search" name="q" value="@Model.Query"
+               placeholder="Title, author, or keyword" autocomplete="off" required />
+
+        @if (Model.Accounts.Count > 1)
+        {
+            <label class="visually-hidden" for="borrow-card">Library</label>
+            <select id="borrow-card" name="card" class="control">
+                <option value="">All my libraries</option>
+                @foreach (var account in Model.Accounts)
+                {
+                    <option value="@account.Id" selected="@(Model.Card == account.Id)">@account.LibraryName</option>
+                }
+            </select>
+        }
+
+        <button class="button button-primary" type="submit"><span>Search</span></button>
+    </div>
+
+    <dl class="medium-legend">
+        <div>
+            <dt><partial name="_MediumBadge" model="new MediumBadgeView(false, null)" /></dt>
+            <dd>A physical library copy. Place a hold; Bindery tells you when it is waiting at your branch and before the pickup deadline.</dd>
+        </div>
+        <div>
+            <dt><partial name="_MediumBadge" model="new MediumBadgeView(true, null)" /></dt>
+            <dd>An ebook or audiobook licence through the library's lending platform. Borrow it there; holds you place in the app still show up on your board.</dd>
+        </div>
+    </dl>
+</form>
+
+@if (!string.IsNullOrWhiteSpace(Model.Query) && ViewData.ModelState.IsValid)
+{
+    <section class="borrow-results" aria-labelledby="shelf-results">
+        <div class="section-heading compact">
+            <h2 id="shelf-results">On your shelf</h2>
+            <span class="folio">@Model.ShelfBooks.Total results</span>
+        </div>
+        @if (Model.ShelfBooks.Items.Count == 0)
+        {
+            <p class="action-empty">No matching books on your shelf.</p>
+        }
+        else
+        {
+            <div class="book-register">
+                @foreach (var book in Model.ShelfBooks.Items)
+                {
+                    <partial name="_BookRow" model="book" />
+                }
+            </div>
+            <nav class="pager" aria-label="Shelf search pages">
+                @if (Model.ShelfBooks.HasPrevious)
+                {
+                    <a class="text-action" asp-page="/Borrow" asp-route-q="@Model.Query" asp-route-medium="@Model.Medium" asp-route-card="@Model.Card" asp-route-catalogPage="@Model.PageNumber" asp-route-shelfPage="@(Model.ShelfPage - 1)">‹ Previous</a>
+                }
+                <span class="pager-position">Page @(Model.ShelfPage + 1) of @Model.ShelfBooks.PageCount</span>
+                @if (Model.ShelfBooks.HasNext)
+                {
+                    <a class="text-action" asp-page="/Borrow" asp-route-q="@Model.Query" asp-route-medium="@Model.Medium" asp-route-card="@Model.Card" asp-route-catalogPage="@Model.PageNumber" asp-route-shelfPage="@(Model.ShelfPage + 1)">Next ›</a>
+                }
+            </nav>
+        }
+    </section>
+
+    @foreach (var result in Model.PluginResults)
+    {
+        <section class="borrow-results" aria-label="@result.Label">
+            <div class="section-heading compact"><h2>@result.Label</h2></div>
+            <partial name="_ActionResult" model="result.Result" />
+        </section>
+    }
+}
+
 @if (!Model.HasCirculationPlugins)
 {
-    <div class="empty-state empty-state-wide">
-        <strong>No library plugin is installed.</strong>
-        <span>Install a circulation plugin, such as <code>bibliocommons</code>, under <code>Bindery:Plugins:Registry</code>.</span>
-    </div>
+    <p class="notice">Library catalogs are not connected. <a asp-page="/Settings">Set up a circulation plugin</a> to include them.</p>
 }
 else if (Model.Accounts.Count == 0)
 {
-    <div class="empty-state empty-state-wide">
-        <strong>Connect a library card first.</strong>
-        <span>Searching and holds use your own card. <a asp-page="/LibraryCards">Add a library card ›</a></span>
-    </div>
+    <p class="notice">To include your libraries, <a asp-page="/LibraryCards">add a library card</a>. Shelf and plugin searches work without one.</p>
 }
-else
+
+@foreach (var result in Model.Results)
 {
-    <form method="get" class="borrow-search" role="search">
-        @*
-            Medium first, as a fieldset of real radio buttons: it works with no JavaScript,
-            a screen reader announces it as one choice, and it survives in the URL.
-        *@
-        <fieldset class="medium-seg">
-            <legend class="visually-hidden">What kind of copy</legend>
-            <label><input type="radio" name="medium" value="any" checked="@(Model.Medium == "any")" /><span>All</span></label>
-            <label><input type="radio" name="medium" value="physical" checked="@(Model.Medium == "physical")" /><span>Physical</span></label>
-            <label><input type="radio" name="medium" value="digital" checked="@(Model.Medium == "digital")" /><span>Digital</span></label>
-        </fieldset>
+    var account = result.Account;
+    var pickups = Model.PickupsFor(account);
 
-        <div class="borrow-search-row">
-            <label class="visually-hidden" for="borrow-q">Title, author, or keyword</label>
-            <input id="borrow-q" class="control control-large" type="search" name="q" value="@Model.Query"
-                   placeholder="Title, author, or keyword" autocomplete="off" required />
-
-            @if (Model.Accounts.Count > 1)
+    <section class="borrow-results" aria-labelledby="results-@account.Id">
+        <div class="section-heading compact">
+            <h2 id="results-@account.Id">@account.LibraryName</h2>
+            @if (result.Page is not null)
             {
-                <label class="visually-hidden" for="borrow-card">Library</label>
-                <select id="borrow-card" name="card" class="control">
-                    <option value="">All my libraries</option>
-                    @foreach (var account in Model.Accounts)
-                    {
-                        <option value="@account.Id" selected="@(Model.Card == account.Id)">@account.LibraryName</option>
-                    }
-                </select>
+                <span class="folio">@(result.Page.Total.OrNullable()?.ToString("N0") ?? result.Page.Items.Length.ToString()) results</span>
             }
-
-            <button class="button button-primary" type="submit"><span>Search</span></button>
         </div>
 
-        <dl class="medium-legend">
-            <div>
-                <dt><partial name="_MediumBadge" model="new MediumBadgeView(false, null)" /></dt>
-                <dd>A copy on a shelf. Place a hold; Bindery tells you when it is waiting at your branch and before the pickup deadline.</dd>
-            </div>
-            <div>
-                <dt><partial name="_MediumBadge" model="new MediumBadgeView(true, null)" /></dt>
-                <dd>An ebook or audiobook licence through the library's lending platform. Borrow it there; holds you place in the app still show up on your board.</dd>
-            </div>
-        </dl>
-    </form>
-
-    @foreach (var result in Model.Results)
-    {
-        var account = result.Account;
-        var pickups = Model.PickupsFor(account);
-
-        <section class="borrow-results" aria-labelledby="results-@account.Id">
-            <div class="section-heading compact">
-                <h2 id="results-@account.Id">@account.LibraryName</h2>
-                @if (result.Page is not null)
+        @if (result.Problem is not null)
+        {
+            <p class="notice notice-error" role="alert">@result.Problem</p>
+        }
+        else if (result.Page is not null && result.Page.Items.IsEmpty)
+        {
+            <p class="action-empty">Nothing @(Model.Medium == "any" ? "" : Model.Medium + " ")matched “@Model.Query”.</p>
+        }
+        else if (result.Page is not null)
+        {
+            <ol class="catalog-list">
+                @foreach (var item in result.Page.Items.AsList())
                 {
-                    <span class="folio">@(result.Page.Total.OrNullable()?.ToString("N0") ?? result.Page.Items.Length.ToString()) results</span>
-                }
-            </div>
+                    var digital = item.Medium.IsDigital;
+                    var availability = item.Availability;
+                    <li class="catalog-row" data-medium="@item.Medium.Wire">
+                        <div class="catalog-cover">
+                            @if (item.CoverUrl.OrNull() is { } cover && cover.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                            {
+                                <img src="@cover" alt="" loading="lazy" referrerpolicy="no-referrer" />
+                            }
+                        </div>
 
-            @if (result.Problem is not null)
-            {
-                <p class="notice notice-error" role="alert">@result.Problem</p>
-            }
-            else if (result.Page is not null && result.Page.Items.IsEmpty)
-            {
-                <p class="action-empty">Nothing @(Model.Medium == "any" ? "" : Model.Medium + " ")matched “@Model.Query”.</p>
-            }
-            else if (result.Page is not null)
-            {
-                <ol class="catalog-list">
-                    @foreach (var item in result.Page.Items.AsList())
-                    {
-                        var digital = item.Medium.IsDigital;
-                        var availability = item.Availability;
-                        <li class="catalog-row" data-medium="@item.Medium.Wire">
-                            <div class="catalog-cover">
-                                @if (item.CoverUrl.OrNull() is { } cover && cover.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                        <div class="catalog-body">
+                            <partial name="_MediumBadge" model="BorrowModel.BadgeFor(item)" />
+                            <h3 class="catalog-title">
+                                @if (item.Url.OrNull() is { } url && url.StartsWith("http", StringComparison.OrdinalIgnoreCase))
                                 {
-                                    <img src="@cover" alt="" loading="lazy" referrerpolicy="no-referrer" />
-                                }
-                            </div>
-
-                            <div class="catalog-body">
-                                <partial name="_MediumBadge" model="BorrowModel.BadgeFor(item)" />
-                                <h3 class="catalog-title">
-                                    @if (item.Url.OrNull() is { } url && url.StartsWith("http", StringComparison.OrdinalIgnoreCase))
-                                    {
-                                        <a href="@url" target="_blank" rel="noopener noreferrer">@item.Title</a>
-                                    }
-                                    else
-                                    {
-                                        @item.Title
-                                    }
-                                    @if (item.Subtitle.OrNull() is { } subtitle)
-                                    {
-                                        <small>@subtitle</small>
-                                    }
-                                </h3>
-                                <p class="catalog-meta">@BorrowModel.Byline(item)</p>
-                                <p class="catalog-availability availability-@availability.Status.Wire">
-                                    @AvailabilityText.For(item)
-                                </p>
-                            </div>
-
-                            <div class="catalog-action">
-                                @if (item.Holdable)
-                                {
-                                    <form method="post" asp-page-handler="Hold" class="hold-form">
-                                        <input type="hidden" name="account" value="@account.Id" />
-                                        <input type="hidden" name="item" value="@item.Id" />
-                                        <input type="hidden" name="returnQuery" value="@Model.Query" />
-                                        <input type="hidden" name="returnMedium" value="@Model.Medium" />
-                                        @if (!digital && pickups.Count > 0)
-                                        {
-                                            <label class="visually-hidden" for="pickup-@account.Id-@item.Id">Pickup branch</label>
-                                            <select id="pickup-@account.Id-@item.Id" name="pickup" class="control">
-                                                <option value="">My default branch</option>
-                                                @foreach (var location in pickups)
-                                                {
-                                                    <option value="@location.Id">@location.Name</option>
-                                                }
-                                            </select>
-                                        }
-                                        <button class="button button-primary" type="submit"><span>Place hold</span></button>
-                                    </form>
-                                }
-                                else if (item.BorrowUrl.OrNull() is { } borrow)
-                                {
-                                    <a class="button button-secondary" href="@borrow" target="_blank" rel="noopener noreferrer">
-                                        <span>Borrow in @(item.Provider.OrNull() ?? "the library app") ↗</span>
-                                    </a>
+                                    <a href="@url" target="_blank" rel="noopener noreferrer">@item.Title</a>
                                 }
                                 else
                                 {
-                                    <span class="catalog-unholdable">Not holdable</span>
+                                    @item.Title
                                 }
-                            </div>
-                        </li>
-                    }
-                </ol>
+                                @if (item.Subtitle.OrNull() is { } subtitle)
+                                {
+                                    <small>@subtitle</small>
+                                }
+                            </h3>
+                            <p class="catalog-meta">@BorrowModel.Byline(item)</p>
+                            <p class="catalog-availability availability-@availability.Status.Wire">
+                                @AvailabilityText.For(item)
+                            </p>
+                        </div>
 
-                @if (result.Page.Pages.OrNullable() is { } pages && pages > 1)
-                {
-                    <nav class="pager" aria-label="@account.LibraryName results pages">
-                        @if (result.Page.Page > 1)
-                        {
-                            <a class="text-action" asp-page="/Borrow" asp-route-q="@Model.Query" asp-route-medium="@Model.Medium" asp-route-card="@Model.Card" asp-route-page="@(result.Page.Page - 1)">‹ Previous</a>
-                        }
-                        <span class="pager-position">Page @result.Page.Page of @pages</span>
-                        @if (result.Page.Page < pages)
-                        {
-                            <a class="text-action" asp-page="/Borrow" asp-route-q="@Model.Query" asp-route-medium="@Model.Medium" asp-route-card="@Model.Card" asp-route-page="@(result.Page.Page + 1)">Next ›</a>
-                        }
-                    </nav>
+                        <div class="catalog-action">
+                            @if (item.Holdable)
+                            {
+                                <form method="post" asp-page-handler="Hold" class="hold-form">
+                                    <input type="hidden" name="account" value="@account.Id" />
+                                    <input type="hidden" name="item" value="@item.Id" />
+                                    <input type="hidden" name="returnQuery" value="@Model.Query" />
+                                    <input type="hidden" name="returnMedium" value="@Model.Medium" />
+                                    @if (!digital && pickups.Count > 0)
+                                    {
+                                        <label class="visually-hidden" for="pickup-@account.Id-@item.Id">Pickup branch</label>
+                                        <select id="pickup-@account.Id-@item.Id" name="pickup" class="control">
+                                            <option value="">My default branch</option>
+                                            @foreach (var location in pickups)
+                                            {
+                                                <option value="@location.Id">@location.Name</option>
+                                            }
+                                        </select>
+                                    }
+                                    <button class="button button-primary" type="submit"><span>Place hold</span></button>
+                                </form>
+                            }
+                            else if (item.BorrowUrl.OrNull() is { } borrow)
+                            {
+                                <a class="button button-secondary" href="@borrow" target="_blank" rel="noopener noreferrer">
+                                    <span>Borrow in @(item.Provider.OrNull() ?? "the library app") ↗</span>
+                                </a>
+                            }
+                            else
+                            {
+                                <span class="catalog-unholdable">Not holdable</span>
+                            }
+                        </div>
+                    </li>
                 }
+            </ol>
+
+            @if (result.Page.Pages.OrNullable() is { } pages && pages > 1)
+            {
+                <nav class="pager" aria-label="@account.LibraryName results pages">
+                    @if (result.Page.Page > 1)
+                    {
+                        <a class="text-action" asp-page="/Borrow" asp-route-q="@Model.Query" asp-route-medium="@Model.Medium" asp-route-card="@Model.Card" asp-route-shelfPage="@Model.ShelfPage" asp-route-catalogPage="@(result.Page.Page - 1)">‹ Previous</a>
+                    }
+                    <span class="pager-position">Page @result.Page.Page of @pages</span>
+                    @if (result.Page.Page < pages)
+                    {
+                        <a class="text-action" asp-page="/Borrow" asp-route-q="@Model.Query" asp-route-medium="@Model.Medium" asp-route-card="@Model.Card" asp-route-shelfPage="@Model.ShelfPage" asp-route-catalogPage="@(result.Page.Page + 1)">Next ›</a>
+                    }
+                </nav>
             }
-        </section>
-    }
+        }
+    </section>
 }

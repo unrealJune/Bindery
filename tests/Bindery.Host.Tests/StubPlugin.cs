@@ -56,6 +56,8 @@ public sealed class StubPlugin : IAsyncDisposable
     /// <summary>Set to have every download fail with a retryable error.</summary>
     public bool FailDownloads { get; set; }
 
+    public bool FailSearch { get; set; }
+
     // ------------------------------------------------------------ circulation (protocol 3.8)
 
     /// <summary>The PIN the stub library accepts. Anything else is auth_required.</summary>
@@ -191,6 +193,12 @@ public sealed class StubPlugin : IAsyncDisposable
                     output = new { kind = "text", text = input?["text"]?.GetValue<string>() ?? string.Empty }
                 }),
                 "purge" => Results.Json(new { status = "ok", output = new { kind = "text", text = "purged" } }),
+                "admin_search" => Results.Json(new { status = "ok", output = new { kind = "list", items = Array.Empty<object>() } }),
+                "search" when plugin!.FailSearch => Results.Json(new
+                {
+                    status = "error",
+                    error = new { code = "network", message = "Stub search unavailable", retryable = true }
+                }),
                 "search" => Results.Json(new
                 {
                     status = "ok",
@@ -508,7 +516,10 @@ public sealed class StubPlugin : IAsyncDisposable
               { "name": "echo", "label": "Echo",
                 "input": [{ "key": "text", "label": "Text", "type": "string", "required": true }],
                 "output": { "kind": "text" } },
-              { "name": "search", "label": "Search",
+              { "name": "search", "label": "Search", "search": true,
+                "input": [{ "key": "q", "label": "Query", "type": "string", "required": true }],
+                "output": { "kind": "list", "itemAction": "download" } },
+              { "name": "admin_search", "label": "Admin search", "search": true, "access": "admin",
                 "input": [{ "key": "q", "label": "Query", "type": "string", "required": true }],
                 "output": { "kind": "list", "itemAction": "download" } },
               { "name": "purge", "label": "Purge", "access": "admin", "input": [], "output": { "kind": "text" } }

@@ -217,6 +217,11 @@ async def delete_job(job_id: str) -> Response:
 
 @app.post("/bindery/v1/actions/{action}", dependencies=[Depends(require_token)])
 async def run_action(action: str, body: ActionRequest, request: Request) -> dict:
+    if action == "search":
+        query = str(body.input.get("q") or "").strip()
+        if not query:
+            raise HTTPException(status_code=422, detail="q is required")
+        return _pending(query)
     if action in ADMIN_ACTIONS and not _is_admin(request):
         return {"status": "error",
                 "error": {"code": "internal", "message": "only an admin can run this action",
@@ -433,9 +438,9 @@ def _parse_json(text: str):
 # ---------------------------------------------------------------- actions
 
 
-def _pending() -> dict:
+def _pending(query: str = "") -> dict:
     items = []
-    for work in store.list_works():
+    for work in store.list_works(query):
         count = len(store.list_chapters(work.id))
         url = work.source_url or work.hedgerow_url
         if count and url:

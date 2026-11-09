@@ -259,7 +259,9 @@ type PluginAction =
       Description: string option
       Input: ConfigField list
       Output: ActionOutput
-      Access: Access }
+      Access: Access
+      /// Opt-in to read-only keyword search (protocol 5).
+      Search: bool }
 
 /// Whether a library item is a copy on a shelf or a licence on a lending platform. The
 /// protocol makes this explicit on every item because the two behave nothing alike: a ready
@@ -667,7 +669,8 @@ module internal Parse =
                   Description = Json.tryText "description" element
                   Input = Json.items "input" element |> List.choose field
                   Output = output
-                  Access = Access.ofWire (Json.tryText "access" element) })
+                  Access = Access.ofWire (Json.tryText "access" element)
+                  Search = Json.tryProp "search" element |> Option.exists (fun flag -> flag.ValueKind = JsonValueKind.True) })
         | _ -> None
 
     let artifact (element: JsonElement) : Artifact option =
@@ -736,25 +739,36 @@ module Manifest =
                 | None -> Error "manifest is missing 'version'"
                 | Some pluginVersion ->
                     let capabilities = Parse.capabilities element
+                    let actions = Json.items "actions" element |> List.choose Parse.action
 
-                    Ok
-                        { ProtocolVersion = version
-                          Name = name
-                          DisplayName = Json.stringOr name "displayName" element
-                          Version = pluginVersion
-                          Homepage = Json.tryText "homepage" element
-                          Description = Json.tryText "description" element
-                          Priority = Json.intOr 0 "priority" element
-                          Matches = Json.strings "matches" element
-                          Formats =
-                            (match Json.strings "formats" element with
-                             | [] -> [ "epub" ]
-                             | formats -> formats |> List.map (fun f -> f.ToLowerInvariant()))
-                          Capabilities = capabilities
-                          Config = Json.items "config" element |> List.choose Parse.field
-                          Actions = Json.items "actions" element |> List.choose Parse.action
-                          Circulation = Parse.circulation capabilities element
-                          Ui = Parse.ui element }
+                    let invalidSearch action =
+                        action.Search
+                        && (action.Output <> ListOutput DownloadItem
+                            || match action.Input with
+                               | [ field ] -> field.Key <> "q" || field.Type <> StringField || not field.Required
+                               | _ -> true)
+
+                    if actions |> List.exists invalidSearch then
+                        Error "search actions require one required string input 'q' and a downloadable list output"
+                    else
+                        Ok
+                            { ProtocolVersion = version
+                              Name = name
+                              DisplayName = Json.stringOr name "displayName" element
+                              Version = pluginVersion
+                              Homepage = Json.tryText "homepage" element
+                              Description = Json.tryText "description" element
+                              Priority = Json.intOr 0 "priority" element
+                              Matches = Json.strings "matches" element
+                              Formats =
+                                (match Json.strings "formats" element with
+                                 | [] -> [ "epub" ]
+                                 | formats -> formats |> List.map (fun f -> f.ToLowerInvariant()))
+                              Capabilities = capabilities
+                              Config = Json.items "config" element |> List.choose Parse.field
+                              Actions = actions
+                              Circulation = Parse.circulation capabilities element
+                              Ui = Parse.ui element }
 
     let parse (text: string) : Result<Manifest, string> =
         Json.parse text |> Result.bind parseElement

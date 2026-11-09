@@ -185,10 +185,12 @@ class Store:
             row = self._db.execute("SELECT * FROM works WHERE id=?", (work_id,)).fetchone()
         return _work(row) if row else None
 
-    def list_works(self) -> list[Work]:
+    def list_works(self, query: str = "") -> list[Work]:
         with self._lock:
             rows = self._db.execute("SELECT * FROM works ORDER BY created").fetchall()
-        return [_work(r) for r in rows]
+        term = query.strip().casefold()
+        return [_work(r) for r in rows
+                if not term or term in r["title"].casefold() or term in r["author"].casefold()]
 
     def find_work(self, *, source_url: Optional[str] = None,
                   hedgerow_url: Optional[str] = None) -> Optional[Work]:
