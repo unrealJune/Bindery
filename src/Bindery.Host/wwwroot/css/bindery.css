@@ -806,7 +806,9 @@ form > label {
     font-size: 0.76rem;
 }
 
-.validation-summary:empty { display: none; }
+/* The tag helper hides its placeholder <li> with an inline style, which the CSP blocks. */
+.validation-summary:empty,
+.validation-summary.validation-summary-valid { display: none; }
 .validation-summary ul { margin: 0; padding-left: var(--s6); }
 
 .field-check {
@@ -2059,12 +2061,31 @@ form > label {
 
 /* The medium filter: a segmented control made of real radio buttons. */
 .medium-seg {
-    display: inline-flex;
     justify-self: start;
-    gap: 2px;
+    min-width: 0;
     margin: 0;
-    padding: 3px;
+    padding: 0;
     border: 0;
+}
+
+/* Floated so the legend lays out as an ordinary block above the track, not on the border. */
+.medium-seg legend {
+    float: left;
+    width: 100%;
+    margin-bottom: var(--s3);
+    padding: 0;
+    color: var(--meta);
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.medium-seg-track {
+    clear: both;
+    display: inline-flex;
+    gap: 2px;
+    padding: 3px;
     border-radius: 999px;
     background: var(--seg);
 }
@@ -2219,6 +2240,7 @@ form > label {
     .hold-form { justify-content: stretch; width: 100%; }
     .hold-form select.control { flex: 1 1 auto; max-width: none; }
     .medium-seg { justify-self: stretch; }
+    .medium-seg-track { display: flex; }
     .borrow-search-row > * { flex: 1 1 100%; }
     .borrow-search-row select.control { flex-basis: 100%; }
     .medium-seg label { flex: 1 1 0; text-align: center; }

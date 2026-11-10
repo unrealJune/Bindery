@@ -22,9 +22,11 @@
     *@
     <fieldset class="medium-seg">
         <legend>Library copy type</legend>
-        <label><input type="radio" name="medium" value="any" checked="@(Model.Medium == "any")" /><span>All</span></label>
-        <label><input type="radio" name="medium" value="physical" checked="@(Model.Medium == "physical")" /><span>Physical</span></label>
-        <label><input type="radio" name="medium" value="digital" checked="@(Model.Medium == "digital")" /><span>Digital</span></label>
+        <div class="medium-seg-track">
+            <label><input type="radio" name="medium" value="any" checked="@(Model.Medium == "any")" /><span>All</span></label>
+            <label><input type="radio" name="medium" value="physical" checked="@(Model.Medium == "physical")" /><span>Physical</span></label>
+            <label><input type="radio" name="medium" value="digital" checked="@(Model.Medium == "digital")" /><span>Digital</span></label>
+        </div>
     </fieldset>
 
     <div class="borrow-search-row">
