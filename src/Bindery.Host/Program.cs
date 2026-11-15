@@ -78,6 +78,7 @@ builder.Services.AddScoped<BookIndexer>();
 builder.Services.AddScoped<LibraryScanner>();
 builder.Services.AddScoped<LibraryWriter>();
 builder.Services.AddScoped<ShelfService>();
+builder.Services.AddScoped<BookSources>();
 builder.Services.AddHostedService<DownloadWorker>();
 builder.Services.AddHostedService<UpdateScheduler>();
 
@@ -185,6 +186,7 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<BinderyDbContext>();
     await db.Database.MigrateAsync();
+    await BookSources.BackfillAsync(db, CancellationToken.None);
 
     scope.ServiceProvider.GetRequiredService<LibraryStore>().EnsureRoot();
 

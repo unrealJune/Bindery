@@ -14,6 +14,8 @@ public class BinderyDbContext(DbContextOptions<BinderyDbContext> options) : DbCo
 
     public DbSet<BookFileEntity> BookFiles => Set<BookFileEntity>();
 
+    public DbSet<BookSourceEntity> BookSources => Set<BookSourceEntity>();
+
     public DbSet<BookAuthorEntity> BookAuthors => Set<BookAuthorEntity>();
 
     public DbSet<BookTagEntity> BookTags => Set<BookTagEntity>();
@@ -115,6 +117,19 @@ public class BinderyDbContext(DbContextOptions<BinderyDbContext> options) : DbCo
             file.HasOne(f => f.Book)
                 .WithMany(b => b.Files)
                 .HasForeignKey(f => f.BookId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        model.Entity<BookSourceEntity>(source =>
+        {
+            // A source belongs to one book; finding "which book is this URL" is the hot path.
+            source.HasIndex(s => new { s.BookId, s.Plugin, s.NormalizedUrl }).IsUnique();
+            source.HasIndex(s => s.NormalizedUrl);
+            source.HasIndex(s => s.SourceId);
+
+            source.HasOne(s => s.Book)
+                .WithMany(b => b.Sources)
+                .HasForeignKey(s => s.BookId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
 

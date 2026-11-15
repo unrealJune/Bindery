@@ -1743,6 +1743,53 @@ form > label {
 .file-row > span { font-family: var(--font-mono); font-size: 0.74rem; color: var(--ink-muted); }
 .digest { color: var(--ink-muted); }
 
+/*
+    Sources. One row per place the book can be fetched from: which plugin, where, and the
+    two facts that matter — is it followed, and did the current files come from it.
+*/
+.source-row {
+    display: grid;
+    grid-template-columns: 9rem minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--s5);
+    padding: var(--s4) var(--s3);
+    border-bottom: 1px solid var(--hairline-soft);
+    font-size: 0.82rem;
+}
+
+.source-where { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.source-where a { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.source-where small { color: var(--ink-muted); font-size: 0.74rem; }
+.source-actions { display: flex; flex-wrap: wrap; gap: var(--s3); justify-content: flex-end; }
+
+@media (max-width: 720px) {
+    .source-row { grid-template-columns: minmax(0, 1fr); }
+    .source-actions { justify-content: flex-start; }
+}
+
+/* Forms that stay folded until asked for: adding a source, merging a book. */
+.disclosure {
+    margin-top: var(--s5);
+    padding-top: var(--s4);
+    border-top: 1px solid var(--hairline-soft);
+}
+
+.disclosure > summary {
+    cursor: pointer;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-muted);
+}
+
+.disclosure > summary:hover { color: var(--accent); }
+.disclosure > summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+.disclosure > form { margin-top: var(--s5); max-width: 40rem; }
+
+.duplicate > summary { text-transform: none; letter-spacing: 0; font-family: inherit; font-size: 0.9rem; color: var(--ink-body); }
+.duplicate > summary small { display: block; margin-left: 1.1rem; color: var(--ink-muted); font-size: 0.76rem; }
+
 /* ---------------------------------------------------------------- plugins */
 
 .plugin-docket {

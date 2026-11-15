@@ -95,6 +95,9 @@ public sealed class LibraryStore(IOptions<BinderyOptions> options, ILogger<Libra
         var absolute = Resolve(directory);
         Directory.CreateDirectory(absolute);
 
+        // What the directory held before, so files the new set no longer names can go.
+        var previous = existingDirectory is null ? null : await ReadSidecarAsync(directory, cancellationToken);
+
         var placed = new List<PlacedFile>();
         string? coverPath = null;
 
@@ -119,7 +122,19 @@ public sealed class LibraryStore(IOptions<BinderyOptions> options, ILogger<Libra
             }
         }
 
+        // A refresh that brings no cover keeps the one already there, rather than leaving
+        // it on disk with nothing pointing at it.
+        if (coverPath is null && previous?.CoverPath is { } oldCover && Exists(oldCover))
+        {
+            coverPath = oldCover;
+        }
+
         await WriteSidecarAsync(directory, metadata with { Files = [.. placed], CoverPath = coverPath }, cancellationToken);
+
+        if (previous is not null)
+        {
+            RemoveStale(previous, placed.Select(file => file.RelativePath).Append(coverPath));
+        }
 
         logger.LogInformation("filed {Title} into {Directory} ({Count} file(s))", metadata.Title, directory, placed.Count);
         return new Placement(directory, placed, coverPath);
@@ -157,6 +172,40 @@ public sealed class LibraryStore(IOptions<BinderyOptions> options, ILogger<Libra
         }
 
         throw new InvalidOperationException($"could not find a free directory for {preferred}");
+    }
+
+    /// <summary>
+    /// Deletes files an earlier sidecar listed that the current one does not. A book that
+    /// switches source usually changes title spelling, and so file name; without this the
+    /// old EPUB would sit beside the new one forever, invisible to the index.
+    /// </summary>
+    private void RemoveStale(SidecarMetadata previous, IEnumerable<string?> keep)
+    {
+        var kept = keep.Where(path => path is not null).ToHashSet(StringComparer.Ordinal);
+        var stale = previous.Files.Select(file => file.RelativePath).Append(previous.CoverPath);
+
+        foreach (var relative in stale)
+        {
+            if (relative is null || kept.Contains(relative))
+            {
+                continue;
+            }
+
+            try
+            {
+                var path = Resolve(relative);
+
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                    logger.LogInformation("removed superseded file {Path}", relative);
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+            {
+                logger.LogWarning(ex, "could not remove superseded file {Path}", relative);
+            }
+        }
     }
 
     private static bool SameWork(SidecarMetadata existing, SidecarMetadata incoming) =>
@@ -299,6 +348,62 @@ public sealed record SidecarMetadata
     /// the last owner lets a book go, its files go with it.
     /// </summary>
     public IReadOnlyList<SidecarOwner>? Owners { get; init; }
+
+    /// <summary>
+    /// Every place the book can be acquired from. <see cref="SourceUrl"/>,
+    /// <see cref="SourcePlugin"/>, and <see cref="SourceId"/> name the one that is followed
+    /// for updates; it is listed here too. Absent from sidecars written before sources
+    /// existed, in which case the followed source is the only one (<see cref="AllSources"/>).
+    /// </summary>
+    public IReadOnlyList<SidecarSource> Sources { get; init; } = [];
+
+    /// <summary>
+    /// <see cref="Sources"/> with the followed source guaranteed present and duplicates
+    /// folded — what the index should hold, whatever age of sidecar this is.
+    /// </summary>
+    public IReadOnlyList<SidecarSource> AllSources()
+    {
+        var all = new List<SidecarSource>(Sources);
+
+        if (SourcePlugin is not null && SourceUrl is not null)
+        {
+            all.Add(new SidecarSource(SourcePlugin, SourceUrl, SourceId, AddedAt, null));
+        }
+
+        return SidecarSource.Fold(all);
+    }
+}
+
+/// <summary>One entry in a sidecar's <c>sources</c>. A stored format, like the sidecar.</summary>
+public sealed record SidecarSource(
+    string Plugin,
+    string Url,
+    string? SourceId,
+    DateTimeOffset AddedAt,
+    DateTimeOffset? LastFetchedAt)
+{
+    public string Key => $"{Plugin} {Core.WorkIdentity.normalizeUrl(Url)}";
+
+    /// <summary>
+    /// One entry per plugin and URL. Where two describe the same source, the earliest
+    /// <c>AddedAt</c>, the latest fetch, and any known source id survive.
+    /// </summary>
+    public static IReadOnlyList<SidecarSource> Fold(IEnumerable<SidecarSource> sources) =>
+        [.. sources
+            .Where(source => !string.IsNullOrWhiteSpace(source.Plugin) && !string.IsNullOrWhiteSpace(source.Url))
+            .GroupBy(source => source.Key, StringComparer.Ordinal)
+            .Select(group =>
+            {
+                var latest = group.OrderByDescending(s => s.LastFetchedAt ?? DateTimeOffset.MinValue).First();
+
+                return latest with
+                {
+                    SourceId = latest.SourceId ?? group.Select(s => s.SourceId).FirstOrDefault(id => id is not null),
+                    AddedAt = group.Min(s => s.AddedAt),
+                    LastFetchedAt = group.Max(s => s.LastFetchedAt)
+                };
+            })
+            .OrderBy(source => source.AddedAt)];
 }
 
 /// <summary>One entry of <see cref="SidecarMetadata.Owners"/>. A stored format, like its parent.</summary>

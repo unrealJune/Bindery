@@ -1,0 +1,10 @@
+@model MergeFormModel
+@*
+    Merging a suggested duplicate into the book on screen. Two choices matter, so both are
+    asked rather than defaulted silently: whose files survive, and which source is followed.
+*@
+<form method="post" asp-page="/Book" asp-page-handler="Merge" asp-route-id="@Model.TargetId" class="plugin-form">
+    <input type="hidden" name="other" value="@Model.OtherId" />
+    <p class="field-help">“@Model.OtherTitle” will be removed and its sources added to this book.</p>
+    <partial name="_MergeOptions" />
+</form>

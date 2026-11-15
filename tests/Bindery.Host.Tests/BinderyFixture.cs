@@ -23,12 +23,18 @@ namespace Bindery.Host.Tests;
 /// via the same <c>Auth:Mode=None</c> switch a developer uses locally — with its handler
 /// swapped for <see cref="TestUserHandler"/>, so a test can be someone other than "dev".
 /// </remarks>
-public sealed class BinderyFixture : IAsyncLifetime
+public class BinderyFixture : IAsyncLifetime
 {
     private WebApplicationFactory<Program>? _factory;
     private string _root = string.Empty;
 
     public StubPlugin Plugin { get; private set; } = default!;
+
+    /// <summary>Further stub plugins, by name, for tests that need more than one downloader.</summary>
+    public Dictionary<string, StubPlugin> Extra { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>Names of extra stubs to register beside <see cref="Plugin"/>. Each claims <c>{name}.invalid</c>.</summary>
+    protected virtual IReadOnlyList<string> ExtraPluginNames => [];
 
     public HttpClient Client { get; private set; } = default!;
 
@@ -42,6 +48,11 @@ public sealed class BinderyFixture : IAsyncLifetime
     public async Task InitializeAsync()
     {
         Plugin = await StubPlugin.StartAsync();
+
+        foreach (var name in ExtraPluginNames)
+        {
+            Extra[name] = await StubPlugin.StartAsync(name: name);
+        }
 
         _root = Path.Combine(Path.GetTempPath(), "bindery-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(LibraryPath);
@@ -67,6 +78,16 @@ public sealed class BinderyFixture : IAsyncLifetime
             ["Bindery:Circulation:SyncEnabled"] = "false",
             ["Bindery:Notifications:PollInterval"] = "01:00:00"
         };
+
+        var index = 1;
+
+        foreach (var extra in Extra.Values)
+        {
+            settings[$"Bindery:Plugins:Registry:{index}:Name"] = extra.Name;
+            settings[$"Bindery:Plugins:Registry:{index}:Enabled"] = "true";
+            settings[$"Bindery:Plugins:Registry:{index}:BaseUrl"] = extra.BaseUrl;
+            index++;
+        }
 
         _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(host =>
         {
@@ -104,6 +125,11 @@ public sealed class BinderyFixture : IAsyncLifetime
         }
 
         await Plugin.DisposeAsync();
+
+        foreach (var extra in Extra.Values)
+        {
+            await extra.DisposeAsync();
+        }
 
         try
         {
@@ -143,7 +169,8 @@ public sealed class BinderyFixture : IAsyncLifetime
 
         for (var attempt = 0; attempt < 100; attempt++)
         {
-            if (registry.Find(Plugin.Name)?.IsUsable == true)
+            if (registry.Find(Plugin.Name)?.IsUsable == true
+                && Extra.Keys.All(name => registry.Find(name)?.IsUsable == true))
             {
                 return;
             }

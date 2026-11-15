@@ -1,0 +1,18 @@
+@* The questions every merge asks. Shared by the suggested-duplicate and pick-any-book forms. *@
+<div class="field">
+    <label>Keep the files and description of</label>
+    <select class="control" name="keep">
+        <option value="target" selected>This book</option>
+        <option value="other">The other book</option>
+    </select>
+</div>
+<div class="field">
+    <label class="field-check">
+        <input type="checkbox" name="follow" value="true" />
+        <span>Follow the other book's source for updates</span>
+    </label>
+    <span class="field-help">Unticked, updates keep coming from this book's followed source.</span>
+</div>
+<div class="form-actions">
+    <button class="button button-danger" type="submit"><span>Merge into this book</span><small>deletes the other book's files</small></button>
+</div>

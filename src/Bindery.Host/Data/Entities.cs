@@ -37,6 +37,10 @@ public class BookEntity
 
     public double? SeriesIndex { get; set; }
 
+    /// <summary>
+    /// The <em>followed</em> source: where scheduled and manual updates come from. Every
+    /// source the book is known by — this one included — is in <see cref="Sources"/>.
+    /// </summary>
     [MaxLength(2000)]
     public string? SourceUrl { get; set; }
 
@@ -68,6 +72,44 @@ public class BookEntity
     /// many people want it — and this is what decides whose catalog it appears in.
     /// </summary>
     public List<ShelfEntryEntity> Shelf { get; set; } = new();
+
+    public List<BookSourceEntity> Sources { get; set; } = new();
+}
+
+/// <summary>
+/// One place a book can be acquired from: a plugin and the URL it was given.
+/// </summary>
+/// <remarks>
+/// A book collects these as it is downloaded through different plugins or merged with a
+/// duplicate. They are what makes a download from any of them land on the same book, and
+/// the set a person chooses the followed source from. Mirrored in the sidecar like every
+/// other piece of book metadata, so a rescan rebuilds them.
+/// </remarks>
+public class BookSourceEntity
+{
+    public int Id { get; set; }
+
+    public Guid BookId { get; set; }
+
+    public BookEntity Book { get; set; } = null!;
+
+    [MaxLength(64)]
+    public string Plugin { get; set; } = string.Empty;
+
+    [MaxLength(2000)]
+    public string Url { get; set; } = string.Empty;
+
+    /// <summary><c>Bindery.Core.WorkIdentity.normalizeUrl</c> of <see cref="Url"/>, for matching.</summary>
+    [MaxLength(2000)]
+    public string NormalizedUrl { get; set; } = string.Empty;
+
+    [MaxLength(200)]
+    public string? SourceId { get; set; }
+
+    public DateTimeOffset AddedAt { get; set; } = DateTimeOffset.UtcNow;
+
+    /// <summary>When a download from this source last produced the book's files.</summary>
+    public DateTimeOffset? LastFetchedAt { get; set; }
 }
 
 /// <summary>
@@ -250,6 +292,13 @@ public class DownloadJobEntity
 
     /// <summary>Whether this was queued as a refresh of an existing book.</summary>
     public bool IsUpdate { get; set; }
+
+    /// <summary>
+    /// File into <see cref="BookId"/> and make this job's source the one followed for
+    /// updates. Without it, a download into an existing book adds its source alongside the
+    /// followed one and leaves following alone.
+    /// </summary>
+    public bool Follow { get; set; }
 
     [MaxLength(200)]
     public string? RequestedBy { get; set; }

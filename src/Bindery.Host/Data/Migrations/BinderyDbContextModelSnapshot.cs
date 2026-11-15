@@ -15,7 +15,7 @@ namespace Bindery.Host.Data.Migrations
         protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "8.0.30");
+            modelBuilder.HasAnnotation("ProductVersion", "10.0.14");
 
             modelBuilder.Entity("Bindery.Host.Data.AuthorEntity", b =>
                 {
@@ -177,6 +177,52 @@ namespace Bindery.Host.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("BookFiles");
+                });
+
+            modelBuilder.Entity("Bindery.Host.Data.BookSourceEntity", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("AddedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("BookId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("LastFetchedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("NormalizedUrl")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Plugin")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SourceId")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Url")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("NormalizedUrl");
+
+                    b.HasIndex("SourceId");
+
+                    b.HasIndex("BookId", "Plugin", "NormalizedUrl")
+                        .IsUnique();
+
+                    b.ToTable("BookSources");
                 });
 
             modelBuilder.Entity("Bindery.Host.Data.BookTagEntity", b =>
@@ -416,6 +462,9 @@ namespace Bindery.Host.Data.Migrations
                     b.Property<string>("ErrorMessage")
                         .HasMaxLength(2000)
                         .HasColumnType("TEXT");
+
+                    b.Property<bool>("Follow")
+                        .HasColumnType("INTEGER");
 
                     b.Property<bool>("IsUpdate")
                         .HasColumnType("INTEGER");
@@ -829,6 +878,17 @@ namespace Bindery.Host.Data.Migrations
                     b.Navigation("Book");
                 });
 
+            modelBuilder.Entity("Bindery.Host.Data.BookSourceEntity", b =>
+                {
+                    b.HasOne("Bindery.Host.Data.BookEntity", "Book")
+                        .WithMany("Sources")
+                        .HasForeignKey("BookId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Book");
+                });
+
             modelBuilder.Entity("Bindery.Host.Data.BookTagEntity", b =>
                 {
                     b.HasOne("Bindery.Host.Data.BookEntity", "Book")
@@ -925,6 +985,8 @@ namespace Bindery.Host.Data.Migrations
                     b.Navigation("Files");
 
                     b.Navigation("Shelf");
+
+                    b.Navigation("Sources");
 
                     b.Navigation("Tags");
                 });

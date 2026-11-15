@@ -26,6 +26,7 @@ public sealed class DownloadRunner(
     LibraryStore library,
     BookIndexer indexer,
     ShelfService shelves,
+    BookSources sources,
     NotificationService notifications,
     IOptions<BinderyOptions> options,
     ILogger<DownloadRunner> logger)
@@ -94,7 +95,18 @@ public sealed class DownloadRunner(
         await LogAsync(job, "info", $"routed to {resolved.Descriptor.DisplayName}: {resolved.Reason}");
 
         var manifest = resolved.Descriptor.Manifest!;
-        var existing = await FindExistingBookAsync(job, cancellationToken);
+        var existing = await FindExistingBookAsync(job, manifest.Name, cancellationToken);
+        var known = KnownSource(existing, manifest.Name, job.Url);
+
+        if (existing is not null)
+        {
+            // Recorded now, so even an "unchanged" answer says which book it was about.
+            job.BookId = existing.Id;
+
+            await LogAsync(job, "info", known is null
+                ? $"filing into “{existing.Title}” as a new source"
+                : $"refreshing “{existing.Title}”");
+        }
 
         // Whose login the plugin uses (§2.3, §4.1): the person who asked, or — for an
         // update nobody asked for — whoever has held the book longest. It decides config
@@ -108,9 +120,14 @@ public sealed class DownloadRunner(
             job.Url,
             config.ToFSharpMap(),
             new Protocol.DownloadOptions(
-                job.IsUpdate || existing is not null,
-                (existing?.SourceId).ToOption(),
-                existing?.UpdatedAt.ToValueOption() ?? Microsoft.FSharp.Core.FSharpOption<DateTimeOffset>.None,
+                known is not null,
+                (known?.SourceId).ToOption(),
+                // "Nothing new since X" is only a fair question when the book's files came
+                // from this very source. If they came from another one, the plugin must
+                // produce its own copy, or switching sources would never change the book.
+                known is not null && FilesCameFrom(existing!, known)
+                    ? existing!.UpdatedAt.ToValueOption()
+                    : Microsoft.FSharp.Core.FSharpOption<DateTimeOffset>.None,
                 manifest.Formats));
 
         Protocol.DownloadOutcome? outcome = null;
@@ -244,7 +261,12 @@ public sealed class DownloadRunner(
             {
                 // Another person's job for the same URL may have filed it while this one ran;
                 // both land on the one book, and both people get it.
-                existing ??= await FindExistingBookAsync(job, cancellationToken);
+                existing ??= await FindExistingBookAsync(job, descriptor.Name, cancellationToken);
+
+                // Any book already known by what the plugin says this work is — its
+                // canonical URL or its source id — through any plugin.
+                existing ??= await sources.FindBookAsync(
+                    [job.Url, metadata.SourceUrl.OrNull()], descriptor.Name, metadata.SourceId.OrNull(), cancellationToken);
 
                 // The pasted URL is rarely the plugin's canonical one (a chapter link, a
                 // missing www). What the plugin says the work is decides — the same test the
@@ -255,7 +277,12 @@ public sealed class DownloadRunner(
 
                 // The requester joins the owners. A job nobody queued keeps whoever has it.
                 var owners = await shelves.OwnersForPlacementAsync(existing?.Id, job.RequesterSubject, cancellationToken);
-                var sidecar = BuildSidecar(metadata, descriptor.Name, existing) with { Owners = owners };
+                if (existing is not null)
+                {
+                    await db.Entry(existing).Collection(book => book.Sources).LoadAsync(cancellationToken);
+                }
+
+                var sidecar = BuildSidecar(metadata, descriptor.Name, existing, job) with { Owners = owners };
                 placement = await library.PlaceAsync(sidecar, staged, existing?.DirectoryPath, cancellationToken);
 
                 var placed = sidecar with { Files = placement.Files, CoverPath = placement.CoverPath };
@@ -268,6 +295,20 @@ public sealed class DownloadRunner(
             job.Message = "Done";
             job.CompletedAt = DateTimeOffset.UtcNow;
             await LogAsync(job, "info", $"filed as {placement.DirectoryPath}");
+
+            if (indexed.Book.SourcePlugin != descriptor.Name)
+            {
+                await LogAsync(job, "info",
+                    $"updates still follow {indexed.Book.SourcePlugin}; follow this source from the book page to switch");
+            }
+
+            // Before the save that marks the job done, so nobody reading a finished job's
+            // log can miss the advice.
+            if (indexed.WasNew && job.RequesterSubject is not null)
+            {
+                await NoteDuplicatesAsync(job, indexed.Book, job.RequesterSubject, cancellationToken);
+            }
+
             await db.SaveChangesAsync(cancellationToken);
 
             if (!job.IsUpdate)
@@ -287,8 +328,29 @@ public sealed class DownloadRunner(
         }
     }
 
-    private SidecarMetadata BuildSidecar(Protocol.BookMetadata metadata, string plugin, BookEntity? existing) =>
-        new()
+    private static SidecarMetadata BuildSidecar(
+        Protocol.BookMetadata metadata,
+        string plugin,
+        BookEntity? existing,
+        DownloadJobEntity job)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var incoming = new SidecarSource(
+            plugin, metadata.SourceUrl.OrNull() ?? job.Url, metadata.SourceId.OrNull(), now, now);
+
+        var previous = existing?.Sources.Select(source => new SidecarSource(
+            source.Plugin, source.Url, source.SourceId, source.AddedAt, source.LastFetchedAt)) ?? [];
+
+        // The source this download came from becomes the followed one when the book is new,
+        // when nothing was followed, when it already was the followed one, or when the
+        // person asked. Otherwise it joins the list and following stays where it was.
+        var follow = existing is null
+                     || job.Follow
+                     || existing.SourcePlugin is null
+                     || existing.SourceUrl is null
+                     || IsSameSource(existing.SourcePlugin, existing.SourceUrl, plugin, job.Url, incoming.Url);
+
+        return new SidecarMetadata
         {
             Id = existing?.Id ?? Guid.NewGuid(),
             Title = metadata.Title,
@@ -299,24 +361,103 @@ public sealed class DownloadRunner(
             Language = metadata.Language.OrNull(),
             Tags = [.. metadata.Tags.AsList()],
             Chapters = metadata.Chapters.OrNullable(),
-            SourceUrl = metadata.SourceUrl.OrNull(),
-            SourcePlugin = plugin,
-            SourceId = metadata.SourceId.OrNull(),
+            SourceUrl = follow ? incoming.Url : existing!.SourceUrl,
+            SourcePlugin = follow ? plugin : existing!.SourcePlugin,
+            SourceId = follow ? incoming.SourceId : existing!.SourceId,
+            Sources = SidecarSource.Fold(previous.Append(incoming)),
             Published = metadata.Published.OrNullable(),
-            AddedAt = existing?.AddedAt ?? DateTimeOffset.UtcNow,
-            UpdatedAt = metadata.Updated.OrNullable() ?? DateTimeOffset.UtcNow
+            AddedAt = existing?.AddedAt ?? now,
+            UpdatedAt = metadata.Updated.OrNullable() ?? now
         };
+    }
 
-    private async Task<BookEntity?> FindExistingBookAsync(DownloadJobEntity job, CancellationToken cancellationToken)
+    private static bool IsSameSource(string plugin, string url, string otherPlugin, params string[] otherUrls) =>
+        plugin == otherPlugin
+        && otherUrls.Any(other => WorkIdentity.normalizeUrl(other) == WorkIdentity.normalizeUrl(url));
+
+    private async Task<BookEntity?> FindExistingBookAsync(
+        DownloadJobEntity job,
+        string plugin,
+        CancellationToken cancellationToken)
     {
         if (job.BookId is { } bookId)
         {
-            return await db.Books.FirstOrDefaultAsync(book => book.Id == bookId, cancellationToken);
+            return await db.Books
+                .Include(book => book.Sources)
+                .FirstOrDefaultAsync(book => book.Id == bookId, cancellationToken);
         }
 
-        // Same URL is the reliable signal before a download; source id only exists after
-        // the plugin has told us one.
-        return await db.Books.FirstOrDefaultAsync(book => book.SourceUrl == job.Url, cancellationToken);
+        // Before the download only the URL is known; any book that has ever been fetched
+        // from it, through any plugin, is this one. Source ids are checked afterwards.
+        return await sources.FindBookAsync([job.Url], plugin, sourceId: null, cancellationToken)
+               ?? await db.Books
+                   .Include(book => book.Sources)
+                   .FirstOrDefaultAsync(book => book.SourceUrl == job.Url, cancellationToken);
+    }
+
+    /// <summary>The book's existing record of this plugin and URL, if it has one.</summary>
+    private static BookSourceEntity? KnownSource(BookEntity? book, string plugin, string url)
+    {
+        if (book is null)
+        {
+            return null;
+        }
+
+        var normalized = WorkIdentity.normalizeUrl(url);
+        var known = book.Sources.FirstOrDefault(source => source.Plugin == plugin && source.NormalizedUrl == normalized);
+
+        if (known is null && book.SourcePlugin == plugin && book.SourceUrl is not null
+            && WorkIdentity.normalizeUrl(book.SourceUrl) == normalized)
+        {
+            // Indexed before sources existed: the followed source is still known.
+            known = new BookSourceEntity
+            {
+                Plugin = plugin,
+                Url = book.SourceUrl,
+                NormalizedUrl = normalized,
+                SourceId = book.SourceId,
+                LastFetchedAt = book.UpdatedAt
+            };
+        }
+
+        return known;
+    }
+
+    /// <summary>Were the book's current files produced by this source?</summary>
+    private static bool FilesCameFrom(BookEntity book, BookSourceEntity source)
+    {
+        var latest = book.Sources.Max(candidate => candidate.LastFetchedAt);
+        return latest is null || source.LastFetchedAt is null || source.LastFetchedAt >= latest;
+    }
+
+    /// <summary>
+    /// A new book that looks like one already on the requester's shelf is filed anyway (a
+    /// title match is not proof) and the job says so, pointing at the merge on the book
+    /// page. Only the requester's own books are compared: what is on anyone else's shelf
+    /// is theirs to know.
+    /// </summary>
+    private async Task NoteDuplicatesAsync(
+        DownloadJobEntity job,
+        BookEntity book,
+        string owner,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var found = await sources.DuplicatesAsync(owner, book.Id, cancellationToken);
+
+            foreach (var duplicate in found.Take(3))
+            {
+                await LogAsync(job, "warn",
+                    $"looks like “{duplicate.Title}” by {duplicate.AuthorLine}, already on your shelf "
+                    + $"({duplicate.Reason}); merge them from the book page");
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Advice, not part of filing. A failure here must not fail the download.
+            logger.LogWarning(ex, "duplicate check failed for {Book}", book.Id);
+        }
     }
 
     private async Task<BookEntity?> FindSameWorkAsync(string? sourceId, string? sourceUrl, CancellationToken cancellationToken)

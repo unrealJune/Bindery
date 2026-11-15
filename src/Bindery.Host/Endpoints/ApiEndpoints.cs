@@ -94,6 +94,109 @@ public static class ApiEndpoints
                 : Results.BadRequest(new { error = result.Problem });
         });
 
+        // ------------------------------------------------------------ sources and duplicates
+
+        api.MapGet("/books/{id:guid}/sources", async (
+            Guid id, BookSources sources, ShelfService shelves, ClaimsPrincipal user, CancellationToken ct) =>
+        {
+            var owner = Identity.SubjectOf(user);
+            return await shelves.HasAsync(id, owner, ct)
+                ? Results.Ok(await sources.ListAsync(owner, id, ct))
+                : Results.NotFound();
+        });
+
+        // Download a URL into this book through any plugin: the way to give a book a second
+        // source, or to refresh it from somewhere other than where it is followed.
+        api.MapPost("/books/{id:guid}/sources", async (
+            Guid id,
+            [FromBody] AddSourceRequest request,
+            DownloadService downloads,
+            ClaimsPrincipal user,
+            CancellationToken ct) =>
+        {
+            var result = await downloads.EnqueueIntoBookAsync(
+                id, request.Url, request.Plugin, request.Follow, user.Identity?.Name, ct, Identity.SubjectOf(user));
+
+            return result.Accepted
+                ? Results.Accepted($"/api/downloads/{result.Job!.Id}", JobView.From(result.Job))
+                : Results.BadRequest(new { error = result.Problem });
+        });
+
+        // Switch which source updates come from. By default the switch also fetches from the
+        // newly followed source, so the book's files come from where it is now followed.
+        api.MapPost("/books/{id:guid}/sources/{sourceId:int}/follow", async (
+            Guid id,
+            int sourceId,
+            bool? fetch,
+            BookSources sources,
+            DownloadService downloads,
+            ClaimsPrincipal user,
+            CancellationToken ct) =>
+        {
+            var problem = await sources.FollowAsync(Identity.SubjectOf(user), id, sourceId, ct);
+
+            if (problem is not null)
+            {
+                return Results.BadRequest(new { error = problem });
+            }
+
+            if (fetch == false)
+            {
+                return Results.NoContent();
+            }
+
+            var queued = await downloads.EnqueueSourceAsync(id, sourceId, follow: true, user.Identity?.Name, ct, Identity.SubjectOf(user));
+            return queued.Accepted
+                ? Results.Accepted($"/api/downloads/{queued.Job!.Id}", JobView.From(queued.Job))
+                : Results.BadRequest(new { error = queued.Problem });
+        });
+
+        api.MapPost("/books/{id:guid}/sources/{sourceId:int}/fetch", async (
+            Guid id,
+            int sourceId,
+            DownloadService downloads,
+            ClaimsPrincipal user,
+            CancellationToken ct) =>
+        {
+            var queued = await downloads.EnqueueSourceAsync(id, sourceId, follow: false, user.Identity?.Name, ct, Identity.SubjectOf(user));
+            return queued.Accepted
+                ? Results.Accepted($"/api/downloads/{queued.Job!.Id}", JobView.From(queued.Job))
+                : Results.BadRequest(new { error = queued.Problem });
+        });
+
+        api.MapDelete("/books/{id:guid}/sources/{sourceId:int}", async (
+            Guid id, int sourceId, BookSources sources, ClaimsPrincipal user, CancellationToken ct) =>
+        {
+            var problem = await sources.RemoveAsync(Identity.SubjectOf(user), id, sourceId, ct);
+            return problem is null ? Results.NoContent() : Results.BadRequest(new { error = problem });
+        });
+
+        api.MapGet("/books/{id:guid}/duplicates", async (
+            Guid id, BookSources sources, ShelfService shelves, ClaimsPrincipal user, CancellationToken ct) =>
+        {
+            var owner = Identity.SubjectOf(user);
+            return await shelves.HasAsync(id, owner, ct)
+                ? Results.Ok(await sources.DuplicatesAsync(owner, id, ct))
+                : Results.NotFound();
+        });
+
+        // Fold another book into this one. This book keeps its id, so ereaders and feeds
+        // that know it keep working; `keep` decides whose files and description survive.
+        api.MapPost("/books/{id:guid}/merge", async (
+            Guid id,
+            [FromBody] MergeRequest request,
+            LibraryWriter writer,
+            ClaimsPrincipal user,
+            CancellationToken ct) =>
+        {
+            var keep = string.Equals(request.Keep, "other", StringComparison.OrdinalIgnoreCase)
+                ? MergeKeep.Other
+                : MergeKeep.Target;
+
+            var result = await writer.MergeAsync(Identity.SubjectOf(user), id, request.Other, keep, request.Follow, ct);
+            return result.Merged ? Results.Ok(new { id, title = result.Title }) : Results.BadRequest(new { error = result.Problem });
+        });
+
         // ------------------------------------------------------------ library
 
         api.MapPost("/library/scan", async (LibraryScanner scanner, CancellationToken ct) =>
@@ -165,6 +268,11 @@ public static class ApiEndpoints
 }
 
 public sealed record EnqueueRequest(string Url, string? Plugin);
+
+public sealed record AddSourceRequest(string Url, string? Plugin, bool Follow);
+
+/// <summary><c>keep</c> is "target" (default) or "other"; <c>follow</c> follows the other book's source.</summary>
+public sealed record MergeRequest(Guid Other, string? Keep, bool Follow);
 
 public sealed record JobView(
     Guid Id,

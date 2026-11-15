@@ -25,6 +25,7 @@ public sealed class BookIndexer(BinderyDbContext db, LibraryStore library, ILogg
             .Include(book => book.Tags)
             .Include(book => book.Files)
             .Include(book => book.Shelf)
+            .Include(book => book.Sources)
             .FirstOrDefaultAsync(book => book.Id == id || book.DirectoryPath == directoryPath, cancellationToken);
 
     /// <summary>
@@ -123,6 +124,8 @@ public sealed class BookIndexer(BinderyDbContext db, LibraryStore library, ILogg
             SyncShelf(book, owners);
         }
 
+        SyncSources(book, metadata.AllSources());
+
         await db.SaveChangesAsync(cancellationToken);
         return new IndexedBook(book, isNew);
     }
@@ -132,6 +135,41 @@ public sealed class BookIndexer(BinderyDbContext db, LibraryStore library, ILogg
     /// <c>Owners</c> at all predates shelves and leaves the index alone; the founder adopts
     /// it (<see cref="ShelfService.AdoptOrphansAsync"/>), which writes the sidecar too.
     /// </summary>
+    private void SyncSources(BookEntity book, IReadOnlyList<SidecarSource> wanted)
+    {
+        // Updated in place rather than replaced, so a source keeps its id across reindexing:
+        // the book page and the API address sources by it.
+        var byKey = book.Sources.ToDictionary(source => $"{source.Plugin} {source.NormalizedUrl}", StringComparer.Ordinal);
+        var keep = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var source in wanted)
+        {
+            var normalized = WorkIdentity.normalizeUrl(source.Url);
+            var key = $"{source.Plugin} {normalized}";
+            keep.Add(key);
+
+            if (!byKey.TryGetValue(key, out var row))
+            {
+                row = new BookSourceEntity { Book = book, Plugin = source.Plugin, NormalizedUrl = normalized };
+                book.Sources.Add(row);
+            }
+
+            row.Url = source.Url;
+            row.SourceId = source.SourceId;
+            row.AddedAt = source.AddedAt;
+            row.LastFetchedAt = source.LastFetchedAt;
+        }
+
+        foreach (var (key, row) in byKey)
+        {
+            if (!keep.Contains(key))
+            {
+                book.Sources.Remove(row);
+                db.BookSources.Remove(row);
+            }
+        }
+    }
+
     private void SyncShelf(BookEntity book, IReadOnlyList<SidecarOwner> owners)
     {
         var wanted = owners
@@ -179,6 +217,7 @@ public sealed class BookIndexer(BinderyDbContext db, LibraryStore library, ILogg
         await entry.Collection(candidate => candidate.Tags).LoadAsync(cancellationToken);
         await entry.Collection(candidate => candidate.Files).LoadAsync(cancellationToken);
         await entry.Collection(candidate => candidate.Shelf).LoadAsync(cancellationToken);
+        await entry.Collection(candidate => candidate.Sources).LoadAsync(cancellationToken);
     }
 
     private async Task<AuthorEntity> GetOrAddAuthorAsync(string name, CancellationToken cancellationToken) =>

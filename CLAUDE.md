@@ -218,6 +218,17 @@ the strictest about it: a library card is a person's.
   `NotificationCategories`. Message text is plain, and subjects are single-line — titles
   come from library data, and a newline in a mail header is header injection.
 
+## Book identity and sources
+
+A book has many sources and follows one (`docs/ARCHITECTURE.md`, "Sources, duplicates, and
+merging").
+
+- **"Same work" is `Bindery.Core.WorkIdentity`.** Do not re-derive duplicate rules in C#;
+  change the F# and its tests.
+- **Only a shared URL or source id is acted on automatically.** A title match is shown to a
+  person, never merged on their behalf.
+- **Never send `knownUpdated` for a source whose copy is not the book's current files.**
+
 ## Things not to do
 
 - Don't add a NuGet dependency without a reason worth stating in the PR.

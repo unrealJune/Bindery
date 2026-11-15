@@ -6,6 +6,19 @@ using Microsoft.Extensions.Options;
 
 namespace Bindery.Host.Library;
 
+/// <summary>Whose files and description survive a merge.</summary>
+public enum MergeKeep
+{
+    /// <summary>The book being merged into keeps its own files and metadata.</summary>
+    Target,
+
+    /// <summary>The other book's files and metadata replace the target's.</summary>
+    Other
+}
+
+/// <summary>What became of a merge.</summary>
+public sealed record MergeResult(bool Merged, string? Problem, string? Title = null);
+
 /// <summary>What became of an upload.</summary>
 public sealed record ImportResult(Guid? BookId, string? Title, bool AlreadyHeld, string? Problem)
 {
@@ -69,6 +82,196 @@ public sealed class LibraryWriter(
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Folds one book into another: the two become one book with every source either had.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Both books must be on <paramref name="owner"/>'s shelf. The target keeps its identity
+    /// — its id, its directory, its place in OPDS feeds, read progress — so ereaders that
+    /// know it keep working. <paramref name="keep"/> says whose <em>files and description</em>
+    /// it ends up with; the followed source stays the target's unless
+    /// <paramref name="followOther"/> asks for the other book's.
+    /// </para>
+    /// <para>
+    /// Books are shared, and what is on anyone else's shelf is theirs. So when somebody else
+    /// also holds the other book, it is not deleted out from under them: only this person's
+    /// claim on it is given up, after its sources have been folded into the target. Either
+    /// way the person sees the same result, and learns nothing about anyone else's shelf.
+    /// </para>
+    /// <para>
+    /// Files first, as everywhere here: the target's files and sidecar are written (the
+    /// other book's files copied in, when they are the ones kept), then the other book goes,
+    /// then the index follows. A crash part-way leaves at worst both books on disk, which a
+    /// second merge finishes. Never a book with nothing behind it.
+    /// </para>
+    /// </remarks>
+    public async Task<MergeResult> MergeAsync(
+        string owner,
+        Guid targetId,
+        Guid otherId,
+        MergeKeep keep,
+        bool followOther,
+        CancellationToken cancellationToken)
+    {
+        if (targetId == otherId)
+        {
+            return new MergeResult(false, "A book cannot be merged with itself.");
+        }
+
+        if (!await shelves.HasAsync(targetId, owner, cancellationToken)
+            || !await shelves.HasAsync(otherId, owner, cancellationToken))
+        {
+            return new MergeResult(false, "One of those books is gone.");
+        }
+
+        var sharedWithOthers = (await shelves.OwnersAsync(otherId, cancellationToken)).Any(subject => subject != owner);
+        SidecarMetadata merged;
+
+        using (await ShelfService.HoldAsync(cancellationToken))
+        {
+            var target = await db.Books.Include(book => book.Sources)
+                .FirstOrDefaultAsync(book => book.Id == targetId, cancellationToken);
+            var other = await db.Books.Include(book => book.Sources)
+                .FirstOrDefaultAsync(book => book.Id == otherId, cancellationToken);
+
+            if (target is null || other is null)
+            {
+                return new MergeResult(false, "One of those books is gone.");
+            }
+
+            var targetSidecar = await library.ReadSidecarAsync(target.DirectoryPath, cancellationToken);
+            var otherSidecar = await library.ReadSidecarAsync(other.DirectoryPath, cancellationToken);
+
+            if (targetSidecar is null || otherSidecar is null)
+            {
+                return new MergeResult(false, "One of those books has no readable bindery.json; rescan the library first.");
+            }
+
+            var sources = SidecarSource.Fold(targetSidecar.AllSources().Concat(otherSidecar.AllSources()));
+            var followed = followOther && otherSidecar.SourcePlugin is not null ? otherSidecar : targetSidecar;
+            var directory = target.DirectoryPath;
+
+            if (keep == MergeKeep.Target)
+            {
+                merged = targetSidecar with { Sources = sources };
+            }
+            else
+            {
+                var staging = Path.Combine(options.Value.DataPath, "staging", $"merge-{Guid.NewGuid():N}");
+                Directory.CreateDirectory(staging);
+
+                try
+                {
+                    // Copied, not moved: the other book must stay whole on disk until the
+                    // target is written — and stays for good when someone else holds it.
+                    var staged = new List<StagedFile>();
+
+                    foreach (var file in otherSidecar.Files)
+                    {
+                        staged.Add(await StageCopyAsync(
+                            file.RelativePath, file.Format, file.ContentType, file.Sha256, false, staging, cancellationToken));
+                    }
+
+                    if (otherSidecar.CoverPath is { } cover && library.Exists(cover))
+                    {
+                        staged.Add(await StageCopyAsync(cover, Path.GetExtension(cover).TrimStart('.'),
+                            Domain.Formats.imageContentType(Path.GetExtension(cover)), null, true, staging, cancellationToken));
+                    }
+
+                    var description = otherSidecar with
+                    {
+                        Id = targetSidecar.Id,
+                        AddedAt = targetSidecar.AddedAt < otherSidecar.AddedAt ? targetSidecar.AddedAt : otherSidecar.AddedAt,
+                        Owners = targetSidecar.Owners,
+                        Sources = sources
+                    };
+
+                    var placement = await library.PlaceAsync(description, staged, target.DirectoryPath, cancellationToken);
+                    merged = description with { Files = placement.Files, CoverPath = placement.CoverPath };
+                    directory = placement.DirectoryPath;
+                }
+                finally
+                {
+                    TryDeleteDirectory(staging);
+                }
+            }
+
+            // The target's owners stay exactly the target's: the person merging already
+            // holds it, and anyone holding only the other book keeps that book.
+            merged = merged with
+            {
+                Owners = targetSidecar.Owners,
+                SourcePlugin = followed.SourcePlugin,
+                SourceUrl = followed.SourceUrl,
+                SourceId = followed.SourceId
+            };
+            await library.WriteSidecarAsync(directory, merged, cancellationToken);
+
+            if (!sharedWithOthers)
+            {
+                if (!string.IsNullOrEmpty(other.DirectoryPath))
+                {
+                    library.DeleteBook(other.DirectoryPath);
+                }
+
+                // History and reading position follow the book. Progress the target already
+                // has for a device wins over the other book's; the rest moves across.
+                await db.Jobs.Where(job => job.BookId == other.Id)
+                    .ExecuteUpdateAsync(setters => setters.SetProperty(job => job.BookId, target.Id), cancellationToken);
+
+                var targetTokens = await db.ReadProgress
+                    .Where(progress => progress.BookId == target.Id)
+                    .Select(progress => progress.TokenId)
+                    .ToListAsync(cancellationToken);
+
+                await db.ReadProgress
+                    .Where(progress => progress.BookId == other.Id && !targetTokens.Contains(progress.TokenId))
+                    .ExecuteUpdateAsync(setters => setters.SetProperty(progress => progress.BookId, target.Id), cancellationToken);
+
+                db.Books.Remove(other);
+                await db.SaveChangesAsync(cancellationToken);
+            }
+
+            await indexer.IndexAsync(merged, directory, target, cancellationToken);
+        }
+
+        if (sharedWithOthers)
+        {
+            // Outside the gate: giving up a shelf claim takes it itself.
+            await DeleteAsync(otherId, owner, cancellationToken);
+        }
+
+        await indexer.PruneEmptyGroupingsAsync(cancellationToken);
+
+        logger.LogInformation("merged {Other} into {Target} for {Owner}, keeping {Keep}'s files{Shared}",
+            otherId, targetId, owner, keep, sharedWithOthers ? " (the other book stays for its other owners)" : "");
+        return new MergeResult(true, null, merged.Title);
+    }
+
+    private async Task<StagedFile> StageCopyAsync(
+        string relativePath,
+        string format,
+        string contentType,
+        string? sha256,
+        bool isCover,
+        string staging,
+        CancellationToken cancellationToken)
+    {
+        var source = library.Resolve(relativePath);
+        var copy = Path.Combine(staging, Guid.NewGuid().ToString("N") + Path.GetExtension(relativePath));
+        File.Copy(source, copy);
+
+        return new StagedFile(
+            copy,
+            format,
+            contentType,
+            Path.GetFileName(relativePath),
+            new FileInfo(copy).Length,
+            sha256 ?? await LibraryStore.ComputeSha256Async(copy, cancellationToken),
+            isCover);
     }
 
     /// <summary>

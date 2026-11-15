@@ -81,12 +81,44 @@ A download is the interesting path, because it crosses every seam:
    fails its own declared digest. Size limits are enforced against what arrives, never
    against what the plugin claims.
 5. `LibraryStore` files the artifact under `Author/Title/` and the book is upserted into
-   the index, matched on `sourceId` so a re-download updates rather than duplicates.
+   the index. Which book it lands on is decided by its *sources* (below): a job aimed at a
+   book, then any book already fetched from that URL by any plugin, then — once the plugin
+   has named the work — any book with that `sourceId`. Files a refresh no longer names (a
+   new title means a new file name) are removed.
 6. `DELETE /bindery/v1/jobs/{id}` tells the plugin to forget the job. Best effort: the
    protocol makes plugins expire artifacts on their own.
 
 Failures carry a `retryable` flag. Retryable ones come back with exponential backoff up to
 `MaxAttempts`; the rest stop and say why.
+
+## Sources, duplicates, and merging
+
+A book can be fetched from several places — Royal Road through FanFicFare, the author's own
+WordPress site, an advance copy — and each plugin names it its own way.
+
+- **Sources.** Every `(plugin, URL)` a book has been fetched from is a `BookSourceEntity`,
+  mirrored in the sidecar's `sources` so a rescan rebuilds them. Exactly one is
+  **followed**: `Book.SourcePlugin`/`SourceUrl`, which the update scheduler, the book page's
+  "Check source", and plugin change-hints (protocol §3.7) all use. Fetching any other source
+  replaces the files once and leaves following alone; following one fetches from it, so the
+  files come from where the book is followed.
+- **Asking for "nothing new".** `knownUpdated` is sent only when the book's current files
+  came from that same source. Otherwise a plugin could answer `unchanged` and the book would
+  silently keep another source's copy.
+- **Identity** is `Bindery.Core.WorkIdentity`, a pure function. A shared source URL or source
+  id is *certain*, and a download is filed into that book without asking. A matching title
+  (stronger with a shared author) is only *probable*: the book is filed separately, the job
+  log says what it resembles, and the book page offers a merge. Two serials can share a
+  title; merging is destructive; so a person decides.
+- **Merging** folds one book into another. The target keeps its id — so OPDS entries, read
+  progress, and download history stay attached — and gains every source the other had. The
+  person picks whose files and description survive, and whether to follow the other book's
+  source. Files move first (copied, then the other directory deleted), the index last.
+- **Shelves.** Sources, duplicate suggestions, and merges are scoped to the person's own
+  shelf; another person's book is "not found". Merging needs both books on your shelf, and
+  if someone else also holds the other book, only your claim on it is folded in — their copy
+  stays. Only "is this source already in the library?" is asked library-wide, which is how
+  a download lands on the shared copy instead of beside it.
 
 ## Serving the catalog
 

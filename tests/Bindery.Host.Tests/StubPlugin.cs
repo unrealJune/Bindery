@@ -99,7 +99,13 @@ public sealed class StubPlugin : IAsyncDisposable
     public string Script { get; set; } =
         """parent.postMessage({ bindery: 1, type: "ready" }, "*");""";
 
-    public static async Task<StubPlugin> StartAsync(string uiMode = "fragment")
+    /// <summary>The host this stub claims works on: <c>https://{Name}.invalid/works/{n}</c>.</summary>
+    public string WorksPrefix => $"https://{Name}.invalid/works/";
+
+    /// <summary>The <c>options</c> object of the most recent download request.</summary>
+    public JsonObject? LastDownloadOptions { get; private set; }
+
+    public static async Task<StubPlugin> StartAsync(string uiMode = "fragment", string name = "stub")
     {
         var builder = WebApplication.CreateSlimBuilder();
         builder.WebHost.UseUrls("http://127.0.0.1:0");
@@ -154,7 +160,7 @@ public sealed class StubPlugin : IAsyncDisposable
         {
             var body = await ReadJsonAsync(context);
             var url = body?["url"]?.GetValue<string>() ?? string.Empty;
-            var supported = url.StartsWith("https://stub.invalid/works/", StringComparison.Ordinal);
+            var supported = url.StartsWith(plugin!.WorksPrefix, StringComparison.Ordinal);
 
             return Results.Json(new { supported, confidence = supported ? 1.0 : 0.0 });
         });
@@ -245,7 +251,7 @@ public sealed class StubPlugin : IAsyncDisposable
         await app.StartAsync();
 
         var address = app.Urls.First();
-        plugin = new StubPlugin(app, address);
+        plugin = new StubPlugin(app, address) { Name = name };
 
         return plugin;
     }
@@ -258,6 +264,7 @@ public sealed class StubPlugin : IAsyncDisposable
         var update = body?["options"]?["update"]?.GetValue<bool>() ?? false;
         var knownUpdated = body?["options"]?["knownUpdated"]?.GetValue<string>();
         var config = body?["config"] as JsonObject;
+        LastDownloadOptions = body?["options"]?.DeepClone() as JsonObject;
 
         context.Response.StatusCode = (int)HttpStatusCode.OK;
         context.Response.ContentType = "application/x-ndjson";
@@ -280,7 +287,7 @@ public sealed class StubPlugin : IAsyncDisposable
             return;
         }
 
-        if (!url.StartsWith("https://stub.invalid/works/", StringComparison.Ordinal))
+        if (!url.StartsWith(WorksPrefix, StringComparison.Ordinal))
         {
             await EmitAsync(new
             {
@@ -300,8 +307,8 @@ public sealed class StubPlugin : IAsyncDisposable
 
         // Like a real site, a chapter link names the same work as the work link does, and
         // the plugin reports the canonical URL — not the one that was pasted.
-        var workId = url["https://stub.invalid/works/".Length..].Split('/')[0];
-        var canonical = $"https://stub.invalid/works/{workId}";
+        var workId = url[WorksPrefix.Length..].Split('/')[0];
+        var canonical = $"{WorksPrefix}{workId}";
         var title = $"Stub Work {workId}";
         var author = config?["author_name"]?.GetValue<string>() ?? "A. Stub";
 
@@ -344,7 +351,7 @@ public sealed class StubPlugin : IAsyncDisposable
                 summary = "Fabricated by the host integration stub.",
                 language = "en",
                 tags = new[] { "Stub" },
-                sourceId = $"stub:{workId}",
+                sourceId = $"{Name}:{workId}",
                 sourceUrl = canonical,
                 chapters = 2,
                 updated = UpdatedAt
@@ -502,7 +509,7 @@ public sealed class StubPlugin : IAsyncDisposable
             "displayName": "Conformance Stub",
             "version": "1.0.0",
             "priority": -100,
-            "matches": ["^https?://stub\\.invalid/works/\\d+(/chapters/\\d+)?$"],
+            "matches": ["^https?://{{name}}\\.invalid/works/\\d+(/chapters/\\d+)?$"],
             "formats": ["epub"],
             "capabilities": { "probe": true, "update": true, "metadata": true, "cover": true, "cancel": true, "circulation": true },
             "circulation": {

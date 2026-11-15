@@ -11,6 +11,12 @@ public sealed record EnqueueResult(DownloadJobEntity? Job, string? Problem)
 }
 
 /// <summary>
+/// A job aimed at a book Bindery already holds. Set on the row before it is queued, so the
+/// worker can never pick the job up without it.
+/// </summary>
+public sealed record JobTarget(Guid BookId, bool IsUpdate, bool Follow);
+
+/// <summary>
 /// Queueing, cancelling, and retrying downloads. The request-thread half of the pipeline.
 /// </summary>
 /// <remarks>
@@ -29,7 +35,8 @@ public sealed class DownloadService(
         string? requestedBy,
         string? preferredPlugin,
         CancellationToken cancellationToken,
-        string? requesterSubject = null)
+        string? requesterSubject = null,
+        JobTarget? target = null)
     {
         url = (url ?? string.Empty).Trim();
 
@@ -67,7 +74,10 @@ public sealed class DownloadService(
             PluginName = resolved.Descriptor.Name,
             Status = JobStatus.Queued,
             RequestedBy = requestedBy,
-            RequesterSubject = requesterSubject
+            RequesterSubject = requesterSubject,
+            BookId = target?.BookId,
+            IsUpdate = target?.IsUpdate ?? false,
+            Follow = target?.Follow ?? false
         };
 
         db.Jobs.Add(entity);
@@ -102,16 +112,59 @@ public sealed class DownloadService(
             return new EnqueueResult(null, "This book has no source URL, so there is nothing to refresh from.");
         }
 
-        var result = await EnqueueAsync(book.SourceUrl, requestedBy, book.SourcePlugin, cancellationToken, requesterSubject);
+        return await EnqueueAsync(
+            book.SourceUrl, requestedBy, book.SourcePlugin, cancellationToken, requesterSubject,
+            new JobTarget(book.Id, IsUpdate: true, Follow: false));
+    }
 
-        if (result.Job is not null)
+    /// <summary>
+    /// Downloads a URL — through any plugin, or the one named — into a book Bindery already
+    /// holds, replacing its files. The URL becomes one of the book's sources; with
+    /// <paramref name="follow"/> it also becomes the one future updates come from.
+    /// </summary>
+    public async Task<EnqueueResult> EnqueueIntoBookAsync(
+        Guid bookId,
+        string url,
+        string? preferredPlugin,
+        bool follow,
+        string? requestedBy,
+        CancellationToken cancellationToken,
+        string? requesterSubject = null)
+    {
+        // Only a book on the asker's shelf; anyone else's is "gone", never "forbidden".
+        if (!await db.Books.AnyAsync(
+                candidate => candidate.Id == bookId
+                             && (requesterSubject == null || candidate.Shelf.Any(entry => entry.Owner == requesterSubject)),
+                cancellationToken))
         {
-            result.Job.IsUpdate = true;
-            result.Job.BookId = book.Id;
-            await db.SaveChangesAsync(cancellationToken);
+            return new EnqueueResult(null, "That book is gone.");
         }
 
-        return result;
+        return await EnqueueAsync(
+            url, requestedBy, preferredPlugin, cancellationToken, requesterSubject,
+            new JobTarget(bookId, IsUpdate: true, Follow: follow));
+    }
+
+    /// <summary>Re-fetches one of a book's sources into it, whether or not it is followed.</summary>
+    public async Task<EnqueueResult> EnqueueSourceAsync(
+        Guid bookId,
+        int sourceId,
+        bool follow,
+        string? requestedBy,
+        CancellationToken cancellationToken,
+        string? requesterSubject = null)
+    {
+        var source = await db.BookSources
+            .AsNoTracking()
+            .Where(candidate => requesterSubject == null
+                                || candidate.Book.Shelf.Any(entry => entry.Owner == requesterSubject))
+            .FirstOrDefaultAsync(candidate => candidate.Id == sourceId && candidate.BookId == bookId, cancellationToken);
+
+        return source is null
+            ? new EnqueueResult(null, "That source is not one of this book's.")
+            : await EnqueueAsync(
+                source.Url, requestedBy, source.Plugin, cancellationToken, requesterSubject,
+                new JobTarget(bookId, IsUpdate: true, Follow: follow));
     }
 
     public async Task<bool> CancelAsync(Person person, Guid jobId, CancellationToken cancellationToken)

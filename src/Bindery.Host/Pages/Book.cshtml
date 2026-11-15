@@ -70,7 +70,7 @@
                 <dd>@book.Updated.ToLocalTime().ToString("yyyy.MM.dd HH:mm")</dd>
             </div>
             <div>
-                <dt>Acquired by</dt>
+                <dt>Follows</dt>
                 <dd><span class="source-badge @(book.SourcePlugin.HasValue() ? null : "source-badge-manual")">@Model.SourceLabel</span></dd>
             </div>
         </dl>
@@ -105,7 +105,7 @@
                 <form method="post" asp-page-handler="Refresh" asp-route-id="@book.Id">
                     <button class="button button-secondary" type="submit">
                         <span>Check source</span>
-                        <small>Re-fetch for changes</small>
+                        <small>Re-fetch the followed source</small>
                     </button>
                 </form>
             }
@@ -149,6 +149,143 @@
             </div>
         }
     </div>
+</section>
+
+@*
+    Sources. A book can be fetched from several places — Royal Road, the author's own site,
+    an advance copy — and updates come from exactly one of them, the followed source. Every
+    control here is a plain form post: the page ships no JavaScript.
+*@
+<section class="ledger-section" id="sources">
+    <div class="section-heading compact">
+        <h2>Sources</h2>
+        <p>Updates come from the followed source. Fetching any other replaces the files once, without changing what is followed.</p>
+    </div>
+
+    @if (Model.Sources.Count == 0)
+    {
+        <p class="field-help">Nothing fetched this book, so it has no sources yet. Add one below to start following it.</p>
+    }
+    else
+    {
+        <div class="file-table">
+            @foreach (var source in Model.Sources)
+            {
+                <div class="source-row">
+                    <span class="source-badge @(source.PluginUsable ? null : "source-badge-manual")" title="@(source.PluginUsable ? source.Plugin : "plugin not installed")">@source.PluginLabel</span>
+                    <div class="source-where">
+                        <a href="@source.Url" rel="noreferrer noopener nofollow">@source.Url</a>
+                        <small>
+                            @(source.Followed ? "Followed for updates" : "Not followed")
+                            @if (source.CurrentFiles)
+                            {
+                                <text> · current files came from here</text>
+                            }
+                            @if (source.LastFetchedAt is { } fetched)
+                            {
+                                <text> · fetched @fetched.ToLocalTime().ToString("yyyy.MM.dd HH:mm")</text>
+                            }
+                        </small>
+                    </div>
+                    <div class="source-actions">
+                        @if (!source.Followed && source.PluginUsable)
+                        {
+                            <form method="post" asp-page-handler="Follow" asp-route-id="@book.Id">
+                                <input type="hidden" name="sourceId" value="@source.Id" />
+                                <button class="button button-secondary" type="submit"><span>Follow</span><small>and fetch now</small></button>
+                            </form>
+                        }
+                        @if (source.PluginUsable)
+                        {
+                            <form method="post" asp-page-handler="FetchSource" asp-route-id="@book.Id">
+                                <input type="hidden" name="sourceId" value="@source.Id" />
+                                <button class="button button-secondary" type="submit"><span>Fetch</span><small>files from here</small></button>
+                            </form>
+                        }
+                        @if (!source.Followed)
+                        {
+                            <form method="post" asp-page-handler="RemoveSource" asp-route-id="@book.Id">
+                                <input type="hidden" name="sourceId" value="@source.Id" />
+                                <button class="button" type="submit"><span>Forget</span></button>
+                            </form>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    }
+
+    <details class="disclosure">
+        <summary>Fetch this book from another URL</summary>
+        <form method="post" asp-page-handler="AddSource" asp-route-id="@book.Id" class="plugin-form">
+            <div class="field">
+                <label for="source-url">Story URL</label>
+                <input id="source-url" class="control" type="url" name="sourceUrl" required placeholder="https://…" autocomplete="url" />
+            </div>
+            <div class="field">
+                <label for="source-plugin">Routing</label>
+                <select id="source-plugin" class="control" name="plugin">
+                    <option value="">Automatic</option>
+                    @foreach (var plugin in Model.Downloaders)
+                    {
+                        <option value="@plugin.Name">@plugin.DisplayName</option>
+                    }
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-check" for="source-follow">
+                    <input id="source-follow" type="checkbox" name="follow" value="true" checked />
+                    <span>Follow it for updates from now on</span>
+                </label>
+                <span class="field-help">Unticked, the URL is fetched into this book once and kept as an extra source.</span>
+            </div>
+            <div class="form-actions">
+                <button class="button button-primary" type="submit"><span>Fetch into this book</span><small>replaces its files</small></button>
+            </div>
+        </form>
+    </details>
+</section>
+
+<section class="ledger-section" id="duplicates">
+    <div class="section-heading compact">
+        <h2>Same work elsewhere?</h2>
+        <p>Merging folds another book into this one. This book keeps its place in feeds and on readers; both books' sources end up here.</p>
+    </div>
+
+    @if (Model.Duplicates.Count == 0)
+    {
+        <p class="field-help">Nothing else on the shelf looks like this book.</p>
+    }
+
+    @foreach (var duplicate in Model.Duplicates)
+    {
+        <details class="disclosure duplicate">
+            <summary>
+                <a asp-page="/Book" asp-route-id="@duplicate.BookId">@duplicate.Title</a>
+                <small>@duplicate.AuthorLine · @duplicate.Reason · @(duplicate.Certain ? "certain" : $"{duplicate.Score:P0} likely")</small>
+            </summary>
+            <partial name="_MergeForm" model="@(new MergeFormModel(book.Id, duplicate.BookId, duplicate.Title))" />
+        </details>
+    }
+
+    @if (Model.Shelf.Count > 0)
+    {
+        <details class="disclosure">
+            <summary>Merge any other book into this one</summary>
+            <form method="post" asp-page-handler="Merge" asp-route-id="@book.Id" class="plugin-form">
+                <div class="field">
+                    <label for="merge-other">Book</label>
+                    <select id="merge-other" class="control" name="other" required>
+                        @foreach (var entry in Model.Shelf)
+                        {
+                            <option value="@entry.Id">@entry.Title · @entry.AuthorLine</option>
+                        }
+                    </select>
+                </div>
+                <partial name="_MergeOptions" />
+            </form>
+        </details>
+    }
 </section>
 
 @if (Model.History.Count > 0)
