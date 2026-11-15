@@ -112,6 +112,25 @@ updates:
           - minor
           - patch
 
+  - package-ecosystem: pip
+    directory: /plugins/wpserial
+    schedule:
+      interval: weekly
+      day: monday
+    labels:
+      - dependencies
+      - plugin/wpserial
+    commit-message:
+      prefix: 'plugin(wpserial)'
+    groups:
+      plugin-server:
+        patterns:
+          - fastapi
+          - uvicorn*
+        update-types:
+          - minor
+          - patch
+
   # ---------------------------------------------------------------- images
 
   - package-ecosystem: docker
@@ -166,6 +185,17 @@ updates:
       - plugin/bibliocommons
     commit-message:
       prefix: 'plugin(bibliocommons)'
+
+  - package-ecosystem: docker
+    directory: /plugins/wpserial
+    schedule:
+      interval: weekly
+      day: monday
+    labels:
+      - dependencies
+      - plugin/wpserial
+    commit-message:
+      prefix: 'plugin(wpserial)'
 
   # ---------------------------------------------------------------- CI
 

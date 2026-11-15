@@ -20,6 +20,12 @@ A small self-hosted service that serves an **OPDS catalog** and acquires books t
 The first plugin wraps [FanFicFare](https://github.com/JimmXinu/FanFicFare): paste an AO3
 or FFN link, get an EPUB in your catalog.
 
+Web serials that live on their author's own **WordPress** site — *Worm*, *Sunspot*, *Maidens
+of the Fall* — are covered by the [WordPress serials plugin](plugins/wpserial/): paste the
+serial's landing page, table of contents, or any chapter, and it follows the table of
+contents and "Next Chapter" links into one EPUB, password-protected chapters included. No
+Royal Road (or its Cloudflare wall) in the way.
+
 ## Your public library, too
 
 Plugins can also speak **library circulation**: search your public library, place holds on
@@ -189,8 +195,8 @@ Requires a stable .NET 10 SDK; the repo targets the supported `net10.0` LTS line
 `global.json` keeps local builds on .NET 10, matching CI and the Docker images.
 
 Dependabot updates allowed by `.github/dependabot.yml` are automatically squash-merged
-after all four required CI checks pass: `build-test`, `plugin-conformance`,
-`hedgerow-conformance`, and `bibliocommons-conformance`. Keep these checks required in
+after all five required CI checks pass: `build-test`, `plugin-conformance`,
+`hedgerow-conformance`, `bibliocommons-conformance`, and `wpserial-conformance`. Keep these checks required in
 the `main` branch protection rule; enabling auto-merge alone does not gate merges on CI.
 After a tested Dependabot head merges, automation dispatches main's CI and image
 publication workflows explicitly, since bot-token merges do not trigger push workflows.

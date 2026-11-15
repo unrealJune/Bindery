@@ -39,6 +39,13 @@ jobs:
         run: python -m unittest discover -s tests -t . --verbose
         working-directory: plugins/bibliocommons
 
+      # The WordPress-serials plugin's page reading, cleaning, and crawl are stdlib-only and
+      # tested against markup shaped like Worm, Maidens of the Fall, and Sunspot, with a fake
+      # fetcher — so the crawl's ordering, locking, and caching rules run with no network.
+      - name: WordPress serials unit tests
+        run: python -m unittest discover -s tests -t . --verbose
+        working-directory: plugins/wpserial
+
       - name: Plugin conformance self-test
         run: python tests/conformance/run.py --self-test --no-color
 
@@ -328,3 +335,66 @@ jobs:
       - name: Stop plugin
         if: always()
         run: docker rm -f plugin || true
+
+  # The WordPress-serials plugin, run as it ships: unprivileged, read-only root, /work on its
+  # own volume. The protocol surface runs offline; one live `inspect` of Worm (two page loads,
+  # no chapters) catches WordPress.com changing shape under the TOC discovery. A full
+  # download is left out on purpose — hundreds of page loads per CI run is not polite.
+  wpserial-conformance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      BINDERY_PLUGIN_TOKEN: conformance-ci
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Build plugin image
+        uses: docker/build-push-action@v7
+        with:
+          context: plugins/wpserial
+          file: plugins/wpserial/Dockerfile
+          push: false
+          load: true
+          tags: bindery-plugin-wpserial:ci
+          cache-from: type=gha,scope=wpserial
+          cache-to: type=gha,scope=wpserial,mode=max
+
+      - name: Start plugin
+        run: |
+          docker run -d --name plugin \
+            -p 8080:8080 \
+            -e BINDERY_PLUGIN_TOKEN="$BINDERY_PLUGIN_TOKEN" \
+            -v wpserial-work:/work \
+            --read-only \
+            --tmpfs /tmp:rw,size=16m \
+            bindery-plugin-wpserial:ci
+
+      - name: Wait for health
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:8080/healthz >/dev/null 2>&1; then
+              echo "healthy after ${i}s"; exit 0
+            fi
+            sleep 1
+          done
+          echo "plugin never became healthy"; exit 1
+
+      - name: Conformance suite
+        run: |
+          python tests/conformance/run.py \
+            --base-url http://localhost:8080 \
+            --token "$BINDERY_PLUGIN_TOKEN" \
+            --action-input inspect:url=https://parahumans.wordpress.com/ \
+            --no-color
+
+      - name: Plugin logs
+        if: always()
+        run: docker logs plugin || true
+
+      - name: Stop plugin
+        if: always()
+        run: |
+          docker rm -f plugin || true
+          docker volume rm wpserial-work || true

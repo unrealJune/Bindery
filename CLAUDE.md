@@ -41,6 +41,7 @@ tests/conformance/          Python black-box suite any plugin image must pass
 plugins/fanficfare/         Reference plugin: FastAPI service + Dockerfile
 plugins/hedgerow/           Royal Road + Discord serial reconciler (sandboxed UI, notify)
 plugins/bibliocommons/      Library circulation (protocol §3.8): SPL, KCLS, any BiblioCommons
+plugins/wpserial/           WordPress-hosted web serials: TOC + Next-link crawl, stdlib-only
 docs/CIRCULATION.md         Hold/loan lifecycle and the notification subsystem
 deploy/helm/bindery/        Helm chart — also the plugin install mechanism
 deploy/docker-compose.yml   Local dev, mirrors the chart's shape
@@ -87,6 +88,16 @@ also stdlib-only:
 ```bash
 cd plugins/bibliocommons && python -m unittest discover -s tests -t .
 ```
+
+The WordPress serials plugin's page reading, cleaning, and crawl are stdlib-only too, tested
+against fixtures shaped like the real sites and a fake fetcher — no network:
+
+```bash
+cd plugins/wpserial && python -m unittest discover -s tests -t .
+```
+
+Its heuristics are theme-agnostic on purpose. Fix a site by improving what WordPress-generic
+signal is read (`app/site.py`), not by adding a branch for that site's host name.
 
 ## Conventions
 

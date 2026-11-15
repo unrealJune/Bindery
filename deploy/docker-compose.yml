@@ -11,6 +11,8 @@ services:
         condition: service_healthy
       bibliocommons:
         condition: service_healthy
+      wpserial:
+        condition: service_healthy
     ports:
       - "8080:8080"
     environment:
@@ -29,6 +31,9 @@ services:
       Bindery__Plugins__Registry__2__Name: bibliocommons
       Bindery__Plugins__Registry__2__BaseUrl: http://bibliocommons:8080
       Bindery__Plugins__Registry__2__Enabled: "true"
+      Bindery__Plugins__Registry__3__Name: wpserial
+      Bindery__Plugins__Registry__3__BaseUrl: http://wpserial:8080
+      Bindery__Plugins__Registry__3__Enabled: "true"
       # Notifications land as .eml files in the data volume: real mail, sent nowhere. Point
       # Host/Port/From/Username/Password at an SMTP server instead to deliver for real.
       Bindery__Notifications__Email__Enabled: "true"
@@ -103,8 +108,30 @@ services:
       retries: 3
       start_period: 10s
 
+  wpserial:
+    build:
+      context: ../plugins/wpserial
+      dockerfile: Dockerfile
+    image: bindery-plugin-wpserial:dev
+    environment:
+      BINDERY_PLUGIN_TOKEN: dev-plugin-token
+      BINDERY_PLUGIN_PORT: "8080"
+      # Extra hosts the probe should claim without being chosen explicitly:
+      # WPSERIAL_HOSTS: "example-serial.net,another.blog"
+    # A chapter cache, so updates of long serials re-read only the newest chapters. Losing it
+    # costs one slow download, never correctness. Still the plugin's own volume, not shared.
+    volumes:
+      - wpserial-work:/work
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys,urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=4).status == 200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
 volumes:
   bindery-data:
   bindery-library:
   fanficfare-work:
   hedgerow-work:
+  wpserial-work:

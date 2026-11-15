@@ -230,6 +230,28 @@ plugins:
         memory: 160Mi
     configSecret: ""
 
+  # Web serials published on WordPress (self-hosted or WordPress.com) — Worm, Sunspot, and
+  # anything else with a table of contents and "Next Chapter" links. The volume is a chapter
+  # cache, so updating a 300-chapter serial re-reads a handful of pages rather than all of
+  # them; on an emptyDir it still works, just slowly after each restart. Hosts the probe
+  # should claim without being chosen explicitly go in WPSERIAL_HOSTS via configSecret.
+  - name: wpserial
+    enabled: true
+    mode: sidecar
+    image: ghcr.io/OWNER/bindery-plugin-wpserial:0.1.0
+    port: 8083
+    resources:
+      limits:
+        memory: 256Mi
+    configSecret: ""
+    persistence:
+      enabled: true
+      size: 1Gi
+      accessModes:
+        - ReadWriteOnce
+      storageClass: ""
+      existingClaim: ""
+
 nodeSelector: {}
 tolerations: []
 affinity: {}
