@@ -7,7 +7,7 @@
 # optimisation, never state that matters: without a persistent volume every update simply
 # re-reads every chapter. Mount one to make updates of long serials cheap.
 
-FROM python:3.12-slim AS base
+FROM python:3.15-slim AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
