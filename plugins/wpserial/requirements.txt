@@ -1,5 +1,5 @@
 # Deliberately short. Everything that reads a serial — fetching, parsing, cleaning, binding —
 # is the standard library (urllib, html.parser, zipfile), so the scraper is unit tested with
 # no dependencies at all and this image never needs a browser engine or scraping framework.
-fastapi==0.162.5
+fastapi==0.165.0
 uvicorn[standard]==0.54.0
